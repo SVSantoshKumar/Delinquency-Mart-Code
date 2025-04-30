@@ -1,0 +1,138 @@
+
+libname prod  ODBC DSN='dwh' schema='fcrusr';
+libname daily ODBC DSN='dwh' SCHEMA='datascience';
+libname db ODBC DSN='dwh' SCHEMA='aavas_live';
+
+libname ddb ODBC DSN='dwh' SCHEMA='sfdc_ld';
+libname ds "\\172.16.2.90\ETL\DeliquencyReport\SAS Datasets\Day to day Backup";
+
+libname ds1 "\\192.168.10.202\Analytical-Data\Drishti\Del files";
+
+-- Importing Reciept Dump
+data mode_filter1;
+set dtsl.MODE_FILTER1_DEC;
+recno=_n_;
+INFORMAT makerdate InstrumentDate authordate valuedate MMDDYY10.; 
+FORMAT makerdate InstrumentDate authordate valuedate DATE9.;
+RUN;
+
+-- Cycle is being considered from ln_acct_schedule, booking_date from duelist(M_FINALDELIQUENCY_BASE)
+proc sql;
+create table kk as
+select a.*,compress(put(a.loanno,20.)) as loan_no,c.booking_date,
+substr(put(b.cycle,date9.),1,2) as cycle
+from mode_filter1 a
+left join (select cod_acct_no,max(datepart(dat_stage_end)) as cycle from prod.ln_acct_schedule 
+where nam_stage='EMI' group by cod_acct_no) b
+on compress(put(a.loanno,20.))=b.cod_acct_no
+left join DAILY.M_FINALDELIQUENCY_BASE c
+on compress(put(a.loanno,20.))=compress(put(c.loan_id,20.))
+;quit;
+
+-- Gross Bounce 
+PROC SQL;
+CREATE TABLE NS_MIN AS 
+select DISTINCT loan_no,ReceiptStatus as status_min,
+	   min(authordate) as min_authordate format date9.,
+	   allocatedamount from kk where ReceiptStatus ne 'Cancelled' 
+group by loan_no
+having authordate = min(authordate) 
+ORDER BY RECEIPTSTATUS;
+QUIT;
+
+-- Removed duplicate entry for loan no
+PROC SORT DATA=NS_MIN OUT=NS1_MIN NODUPKEY;
+BY LOAN_NO;
+RUN;
+
+PROC SQL;
+CREATE TABLE NS_MAX AS 
+select DISTINCT loan_no,ReceiptStatus as status_max,
+	   max(authordate) as max_authordate format date9.,
+	   allocatedamount 
+from kk 
+where ReceiptStatus ne 'Cancelled' 
+group by loan_no
+having authordate = max(authordate) 
+ORDER BY RECEIPTSTATUS;
+QUIT;
+
+PROC SORT DATA=NS_MAX OUT=NS1_MAX NODUPKEY;
+BY LOAN_NO;
+RUN;
+
+PROC SQL;
+	CREATE TABLE NS_FINAL 
+	AS SELECT distinct a.loan_no,a.cycle,a.booking_date,B.*,C.* 
+	FROM KK A 
+	LEFT JOIN NS1_MIN B ON A.LOAN_NO = B.LOAN_NO 
+    LEFT JOIN NS1_MAX C ON A.LOAN_NO = C.LOAN_NO;
+QUIT;
+
+/*proc sql;*/
+/*create table dd as*/
+/*select distinct a.loan_no,a.cycle,a.booking_date,b.*,c.**/
+/*from kk a*/
+/*left join  */
+/*(select DISTINCT loan_no,ReceiptStatus as status_min,min(authordate) as min_authordate format date9.,*/
+/*allocatedamount from kk where ReceiptStatus ne 'Cancelled' group by loan_no*/
+/*having authordate = min(authordate) ORDER BY ReceiptStatus*/
+/*) as b */
+/**/
+/*on a.loan_no=b.loan_no*/
+/**/
+/*left join  */
+/*(select loan_no,ReceiptStatus as status_max,max(authordate) as max_authordate format date9.,*/
+/*allocatedamount from kk where ReceiptStatus ne 'Cancelled' group by loan_no*/
+/*having authordate = max(authordate)) as c*/
+/*on a.loan_no=c.loan_no;*/
+/*quit;*/
+
+PROC SQL;
+	CREATE TABLE NET_STATUS_1 AS 
+	SELECT a.*,c.tmcurrentstatus as status_13,
+	d.tmcurrentstatus as status_18,
+	e.tmcurrentstatus as status_24
+	FROM NS_FINAL AS A
+LEFT JOIN dtsl.M_FINALDELIQUENCY_BASE_13DEC24 as C
+on input(a.LOAN_NO,20.) = C.loan_ID
+LEFT JOIN dtsl.M_FINALDELIQUENCY_BASE_18DEC24 as D
+on input(a.LOAN_NO,20.) = D.loan_ID
+LEFT JOIN dtsl.M_FINALDELIQUENCY_BASE_23DEC24 as E
+on input(a.LOAN_NO,20.) = E.loan_ID;
+QUIT;
+
+proc sql;
+create table rrd as
+select a.*,
+case when cycle='05' and status_13 in ('5.Roll Forward','6.Cheque In Transit') and status_max='Bounced' then 'Bounced'
+     when cycle='10' and status_18 in ('5.Roll Forward','6.Cheque In Transit') and status_max='Bounced' then 'Bounced'
+     when cycle='15' and status_24 in ('5.Roll Forward','6.Cheque In Transit') and status_max='Bounced' then 'Bounced'
+else 'Pass' end as final_net 
+from NET_STATUS_1 a;
+run;
+
+proc sql;
+create table final as
+select a.*,
+case when loan_no in 
+('121200600034023','121201400011865',
+'131201200037519','131201200081544','131203300062799','131203400079587','141201400108386',
+'141201400111322','141201400116634','141201400122941','141201400136458','141201400138304',
+'141201400148183','141203300092161','141203300098211','151200500259744','151201200207609',
+'151201200208782','151201400157761','151201400170014','151201400191332','151201400214594',
+'151202400257832','151202900197494','151203300153902','181219200942031',
+'151203300229692','151203400152043','151204900273528','151207500215084',
+'151207500219272','161201400332048','161201400370251','161202900278664',
+'161202900381724','161203300387602','171200500459728','171200500521676',
+'171202900459867','171203300660343','171211100678811','181205500885903') then "Bounced"
+else final_net end as final_net1
+from rrd a;
+quit;
+
+proc export data=final
+outfile="\\192.168.10.230\advanced analytics\Drishti\Bounce\final_DEC1.xlsx" 
+dbms=xlsx replace;
+run;
+
+
