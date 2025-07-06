@@ -1,0 +1,126 @@
+CREATE OR REPLACE TEMP TABLE mode_filter1 AS
+SELECT 	
+    *
+FROM REG_UAT_BACKUP.FLEX_LMS_L1_0725.RCPTDUMP_EXTRACT where TO_DATE(INSTR_DAT, 'DD-MM-YYYY') = TO_DATE('05-10-2024', 'DD-MM-YYYY') 
+--AND TO_DATE(INSTR_DAT, 'DD-MM-YYYY') <= TO_DATE('31-03-2025', 'DD-MM-YYYY');
+
+
+select count(*) from mode_filter1 limit 1000 -- 235628
+
+select  TO_DATE(INSTR_DAT, 'DD-MM-YYYY'), count(*) FROM REG_UAT_BACKUP.FLEX_LMS_L1_0725 .RCPTDUMP_EXTRACT group by TO_DATE(INSTR_DAT, 'DD-MM-YYYY') order by  TO_DATE(INSTR_DAT, 'DD-MM-YYYY')
+
+
+
+select count(*) from kk limit 1000 -- 235628
+
+
+CREATE OR REPLACE TEMP TABLE kk AS
+SELECT 
+    a.*,
+	c.loan_no,
+	b.cod_acct_no,
+    SUBSTRING(TO_CHAR(b.cycle, 'YYYY-MM-DD'), 6, 2) AS cycle,
+	TO_DATE(c.start_timestamp) as start_date,
+	(c.end_timestamp) as end_date
+FROM mode_filter1 a
+LEFT JOIN (
+    SELECT 
+        cod_acct_no,
+       -- MAX(DATE_TRUNC('day', dat_stage_end)) AS cycle
+        MAX(DATE_TRUNC('day', TO_TIMESTAMP(dat_stage_end, 'YYYY-MM-DD HH24:MI:SS'))) AS CYCLE
+    FROM DISHA_L1_HARMONIZED.FLEX_LMS.LN_ACCT_SCHEDULE
+    WHERE nam_stage = 'EMI' and ACTIVATION_FLAG = 1 GROUP BY cod_acct_no
+) b ON a.NEW_LN_ACCT_NO = b.cod_acct_no
+LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.DELIQUENCY_MART_V5 c
+    ON TRIM(a.NEW_LN_ACCT_NO) = TRIM(c.loan_no) 
+    where  TO_DATE(c.start_timestamp) <= '2024-10-05' and ( TO_DATE(c.end_timestamp) > '2024-10-05' OR  TO_DATE(c.end_timestamp) IS NULL)
+
+select count(*) from kk limit 1000 -- 235628
+
+
+
+CREATE OR REPLACE TEMP TABLE ns_min AS
+SELECT *
+FROM (
+    SELECT 
+        new_ln_acct_no,
+		OLD_LN_ACCT_NO,
+		INSTR_NO,
+		prtnr_bank_nam,
+		INSTR_MODE,
+		INSTR_AMT,
+		ALLOCATED_AMT,
+		Rcpt_stat AS status_min,
+        author_dat AS min_authordate,
+		MAKER_DAT,
+		INSTR_DAT,
+		BOUNCE_REASON,
+		start_date,
+        ROW_NUMBER() OVER (PARTITION BY new_ln_acct_no ORDER BY author_dat ASC) AS rn
+    FROM kk
+    WHERE Rcpt_stat <> 'Cancelled'
+)
+QUALIFY rn = 1;
+
+
+select count(*) from ns_min -- 203320
+
+select  count(*) from ns_min  limit 1000
+
+
+CREATE OR REPLACE TEMP TABLE ns_max AS
+SELECT *
+FROM (
+    SELECT 
+        new_ln_acct_no,
+		OLD_LN_ACCT_NO
+		INSTR_NO,
+		prtnr_bank_nam,
+		INSTR_MODE,
+		INSTR_AMT,
+		ALLOCATED_AMT,
+        Rcpt_stat AS status_max,
+        author_dat AS max_authordate,
+        MAKER_DAT,
+		INSTR_DAT,
+		BOUNCE_REASON,
+		START_DATE,
+        ROW_NUMBER() OVER (PARTITION BY new_ln_acct_no ORDER BY author_dat DESC) AS rn
+    FROM kk
+    WHERE Rcpt_stat <> 'Cancelled'
+)
+QUALIFY rn = 1;
+
+select count(*) from ns_max -- 203320
+
+select new_ln_acct_no, count(*) from ns_max 
+group by new_ln_acct_no having count(*) > 1
+limit 1000
+
+
+
+CREATE OR REPLACE TEMP TABLE ns_final AS
+SELECT DISTINCT 
+    a.loan_no,
+	a.old_ln_acct_no,
+	a.INSTR_NO,
+	a.prtnr_bank_nam,
+	a.INSTR_MODE,
+    a.INSTR_AMT,
+    a.ALLOCATED_AMT,
+	a.INSTR_DAT,
+	a.MAKER_DAT AS RECIEVED_DATE,
+    a.cycle,
+    b.status_min AS GROSS_STATUS,
+    b.min_authordate,
+    b.allocated_amt AS allocated_min,
+    c.status_max,
+    c.max_authordate,
+    c.allocated_amt AS allocated_max
+FROM kk a
+LEFT JOIN ns_min b ON a.loan_no = b.new_ln_acct_no
+LEFT JOIN ns_max c ON a.loan_no = c.new_ln_acct_no;
+select * from KK where loan_no in 
+('191201501433424', 
+'221208102252845', 
+'211212802128712' )
