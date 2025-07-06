@@ -1,0 +1,27 @@
+from datetime import datetime, timedelta
+from snowflake.snowpark import Session  # Import Session class
+
+def main(session: Session):  # Use Session directly, not snowpark.Session
+    start_date = datetime.strptime("2024-08-01", "%Y-%m-%d")
+    end_date = datetime.strptime("2024-12-31", "%Y-%m-%d")
+    curr_date = start_date
+
+    results = []
+    
+    while curr_date <= end_date:
+        date_str = curr_date.strftime('%Y-%m-%d')
+        print(f"Calling procedure for: {date_str}")
+        
+        result = session.sql(f"""
+            CALL DISHA_MART_ANALYTICS.COLLECTION_MART.LOAD_COLLECTION_BOUNCE_V1('{date_str}')
+        """).collect()
+
+
+        results.append({"date": date_str, "message": result[0][0]})
+        curr_date += timedelta(days=1)
+
+    # Return as a Snowpark DataFrame (this suppresses the warning)
+    return session.create_dataframe(results)
+
+    ##    print("Result:", result[0][0])
+     ##   curr_date += timedelta(days=1)
