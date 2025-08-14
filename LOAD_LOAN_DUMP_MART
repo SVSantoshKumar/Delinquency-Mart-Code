@@ -1,0 +1,1691 @@
+CREATE OR REPLACE PROCEDURE DISHA_MART_ANALYTICS.REGULATORY_MART.LOAD_LOAN_DUMP_MART("START_DATE" DATE DEFAULT DATE_ADDMONTHSTODATE(-1, CURRENT_DATE()))
+RETURNS VARCHAR(2550)
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS 'DECLARE 
+	PROC_NAME VARCHAR(500):=''DISHA_MART_ANALYTICS.REGULATORY_MART.LOAD_LOAN_DUMP_MART'';
+	TBL_NAME VARCHAR(500):=''DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART'';
+    TOTAL_ROWS_IN_PREFINAL INTEGER DEFAULT 0;
+    ROWS_INSERTED INTEGER DEFAULT 0;
+    ROWS_UPDATED INTEGER DEFAULT 0;
+    ROWS_UNCHANGED INTEGER DEFAULT 0;
+    DUPLICATE_COUNT INTEGER;
+    DUPLICATE_DETAILS VARCHAR(2000);
+    CURR_TIME TIMESTAMP := TO_VARCHAR(CURRENT_TIMESTAMP());
+    ERROR_MESSAGE VARCHAR(1000);
+    FINAL_OUTPUT VARCHAR(4000);
+
+BEGIN
+	-- STEP 1: Initialize date parameters for the current month
+    LET MONTH_START_DATE DATE := DATE_TRUNC(''MONTH'',:START_DATE);
+    LET MONTH_END_DATE DATE := LAST_DAY(:START_DATE);
+	
+
+--Create Main table
+	CREATE TABLE IF NOT EXISTS DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART (
+	LOAN_NO_OLD	VARCHAR(255),
+	LOAN_NO	VARCHAR(255),
+	CUSTOMER_ID	NUMBER(38,0),
+	CUSTOMER_NAME	VARCHAR(255),
+	LOAN_STATUS	VARCHAR(255),
+	LOAN_AMOUNT	FLOAT,
+	DISBURSAL_AMOUNT	FLOAT,
+	LOAN_AUTHOR_DATE	DATE,
+	FIRST_DISBURSAL_DATE	DATE,
+	LAST_DISBURSAL_DATE	DATE,
+	LOAN_MATURITY_DATE	DATE,
+	LOAN_TERMINATION_DATE	DATE,
+	DISBURSAL_STATUS	VARCHAR(19),
+	PROCESSING_FEES	FLOAT,
+	SERVICE_CHARGE_PDD	FLOAT,
+	ADMINISTRATIVE_FEES	FLOAT,
+	LEGAL_CHARGES	FLOAT,
+	VALUATION_CHARGES	FLOAT,
+	STAMPING_CHARGES	FLOAT,
+	CERSAI_REGISTRATION_CHARGES	FLOAT,
+	RCU_CHARGES	FLOAT,
+	INSU_CHARGES	FLOAT,
+	CHARGES_DEDUCTED_AT_DISBURSEMENT	FLOAT,
+	STANDARD_HOUSING_LOAN_DRCR	FLOAT,
+	NPA_HOUSING_LOAN_DRCR	FLOAT,
+	STANDARD_NON_HOUSING_LOAN_DRCR	FLOAT,
+	NPA_NON_HOUSING_LOAN_DRCR	FLOAT,
+	INTEREST_RECEIVABLE_ON_HOUSING_L	FLOAT,
+	INTEREST_RECEIVABLE_ON_NON_HOUSI	FLOAT,
+	SUSPENDED_INTEREST_RECEIVABLE_DR	FLOAT,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_H	FLOAT,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_N	FLOAT,
+	SUSPENDED_INTEREST_ACCRUED_ON_HO	FLOAT,
+	SUSPENDED_INTEREST_ACCRUED_ON_NO	FLOAT,
+	SUNDRY_CREDITORS_LMS_ON_HOUSING	FLOAT,
+	SUNDRY_CREDITORS_LMS_ON_NON_HOUS	FLOAT,
+	LOAN_PAYABLE_ON_HOUSING_LOAN_DRC	FLOAT,
+	LOAN_PAYABLE_ON_NON_HOUSING_LOAN	FLOAT,
+	INTEREST_RECEIVABLE	FLOAT,
+	INTEREST_ACCRUED	FLOAT,
+	MRR	VARCHAR(255),
+	TOTAL_POS	FLOAT,
+	POS_HL	FLOAT,
+	POS_NHL	FLOAT,
+	TOTAL_FOR_PROVISION	VARCHAR(120),
+	DPD_EMI_PEMI	FLOAT,
+	PROVISION	NUMBER(1,0),
+	ASSET_CLASSIFICATION	VARCHAR(255),
+	ASSET_STATUS_AS_PER_OLD	VARCHAR(1),
+	IRR	FLOAT,
+	LOAN_TENURE	NUMBER(38,0),
+	LOAN_RATE_METHOD	VARCHAR(255),
+	FATHER_OR_HUSBAND_NAME	VARCHAR(255),
+	ADDRESS	VARCHAR(6002),
+	PRIMARY_PHONE	VARCHAR(4938),
+	ALTERNATE_PHONE	VARCHAR(4938),
+	COUNTRY	VARCHAR(500),
+	STATE	VARCHAR(255),
+	DISTRICT	VARCHAR(255),
+	TAHSIL	VARCHAR(255),
+	PINCODE	VARCHAR(255),
+	PROPERTY_FULL_ADDRESS	VARCHAR(2000),
+	PROPERTY_ASSET_ADDRESS	VARCHAR(2000),
+	VILLAGE_NAME_LANDMARK	VARCHAR(2000),
+	TAHSIL_PROPERTY	VARCHAR(255),
+	DISTRICT_PROPERTY	VARCHAR(255),
+	STATE_PROPERTY	VARCHAR(430),
+	PINCODE_ASSET	VARCHAR(255),
+	PROPERTY_AREA	FLOAT,
+	PROPERTY_OWNER	VARCHAR(255),
+	ASSET_LEVEL	VARCHAR(255),
+	ASSET_COLLATERAL_DESC	VARCHAR(255),
+	LOAN_REPAYMENT_MODE	VARCHAR(255),
+	FOIR	FLOAT,
+	LOAN_SECTOR_TYPE	VARCHAR(120),
+	CUSTOMER_CONSTITUTION	VARCHAR(255),
+	CATEGORY	VARCHAR(255),
+	PAN	VARCHAR(14814),
+	CUSTOMER_PAN_FLAG	VARCHAR(26),
+	GENDER_BR VARCHAR(255),
+	GENDER_LMS	VARCHAR(255),
+	CUSTOMER_TYPE	VARCHAR(765),
+	SOURCE_TYPE	VARCHAR(430),
+	BRANCH	VARCHAR(255),
+	HUB	VARCHAR(255),
+	BRANCH_STATE	VARCHAR(255),
+	PRODUCT_NHB	VARCHAR(255),
+	PRODUCT	VARCHAR(255),
+	SCHEME	VARCHAR(255),
+	PENDING_DISBURSAL_AMOUNT1	FLOAT,
+	ASSET_COLLATERAL_VALUE	FLOAT,
+	LTV	FLOAT,
+	EMI_AMOUNT	NUMBER(38,0),
+	REPAYMENT_START_DATE	VARCHAR(255),
+	LOAN_ADVANCE_INSTL	NUMBER(38,0),
+	DOB	DATE,
+	FINANCIAL_MONTH	FLOAT,
+	EMI_BILLED	NUMBER(38,0),
+	LAST_EMI_RECEIVED_DATE	DATE,
+	OCCUPATION	VARCHAR(255),
+	POOL_ID	VARCHAR(255),
+	POOL_NAME	VARCHAR(255),
+	AGENCY_NAME	VARCHAR(255),
+	TOTAL_OUTSTANDING	FLOAT,
+	COMBINED_LTV	FLOAT,
+	PARENT_LOAN_NO	VARCHAR(255),
+	CUST_PROFILE_ID	VARCHAR(255),
+	CUST_PROFILE_DESC	VARCHAR(255),
+	CUSTOMER_SUB_PROFILE_DESC	VARCHAR(4938),
+	PENDING_DISBURSMENT	VARCHAR(255),
+	RESTRUCTURE_2_0	VARCHAR(255),
+	ADDITIONAL_PROVISIONING_REQUIRED	VARCHAR(255),
+	PROVISIONING_RELEASE	VARCHAR(120),
+	ASSET_CLASSIFICATION_SEP_24_NEW	VARCHAR(120),
+	ASSET_CLASSIFICATION_SEP_24_OLD	VARCHAR(120),
+	TOTAL_POS_SEP_24	VARCHAR(1),
+	DPD_PROVISION_SEP_24	VARCHAR(1),
+	DIFFERENCE_DPD	VARCHAR(1),
+	BHEEM_DPD	VARCHAR(1),
+	TYPE_OF_LOAN_FC	VARCHAR(255),
+	CREDIT_DECISION_IDENTIFIER_FC	VARCHAR(255),
+	PROPERTY_IDENTIFIER_FC	VARCHAR(255),
+	END_USE_FOR_MSME	VARCHAR(255),
+	TRANSACTION_STRUCTURE_FC	VARCHAR(255),
+	TRANSACTION_EXECUTION_MODE_FC	VARCHAR(255),
+	TYPE_OF_PROPERTY_SFDC	VARCHAR(255),
+	PROD_CATEGORY	VARCHAR(255),
+	ORIGINAL_LOAN_TENURE	NUMBER(38,0),
+	LOAN_TENURE_FOR_RAJAT	NUMBER(38,0),
+	REMAINING_TENURE	FLOAT,
+	LOAN_SANCTION_RATE_METHOD	VARCHAR(430),
+	GENDER_LOS	VARCHAR(31501),
+	PROPERTY_AREA_LMS	FLOAT,
+	INCOME_LMS	FLOAT,
+		INSURANCE FLOAT,
+	LOAN_SURAKSHA FLOAT,
+	KOTAK_LIFE_INSURANCE FLOAT,
+	SERVICE_CHARGE_PDD_KOT FLOAT,
+	SHRIRAM_PROPERTY_INSURANCE FLOAT,
+	FUTURE_GENERALI_INSURANCE FLOAT,
+	CHEQUE_BOUNCING_CHARGES FLOAT,
+	CHEQUE_CANCELLATION_CHARGES FLOAT,
+	HDFC_LIFE_INSURANCE_COMPANY_LIMI FLOAT,
+	SERVICE_CHARGE_PDD_HDF FLOAT,
+	CASH_COLLECTION_CHARGES FLOAT,
+	RELIGARE_HEALTH_INSURANCE_CO FLOAT,
+	LEGAL_CASE_FILED_CHARGES FLOAT,
+	COLLECTION_FOLLOW_UP_CHARGES FLOAT,
+	EQUITABLE_MORTGAGE_FEES FLOAT,
+	EXCEPTIONAL_STATEMENT_CHARGES FLOAT,
+	DOCUMENT_COPY_CHARGES FLOAT,
+	SWITCH_FEES FLOAT,
+	BAJAJ_ALLIANZ_LIFE_INSURANCE FLOAT,
+	COMPLETION_CERTIFICATE_CHARGE FLOAT,
+	ICICI_LOMBARD_GIC_LIMITED FLOAT,
+	ROC_CHARGES_CREATION_EXPENSES FLOAT,
+	ICICI_PRUDENTIAL_LIFE_INSURANCE FLOAT,
+	LOAN_CANCELLATION_CHARGES FLOAT,
+	SUBSEQUENT_TRANCHE_VISIT_CHARGE FLOAT,
+	ICICI_LOMBARD_GENERAL_INSURANCE FLOAT,
+	BHARTI_AXA_LIFE_INSURANCE FLOAT,
+	CARE_PROTECTION_PLAN FLOAT,
+	ODV_CHARGES FLOAT,
+	RPDC_COLLECTION_BY_VISIT_TO_CUST FLOAT,
+	SWAPPING_CHARGES FLOAT,
+	BAJAJ_ALLIANZ_GENERAL_INSURANCE FLOAT,
+	REPORT_DATE DATE);
+
+--Clean existing data for given month
+	DELETE FROM DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART 
+	WHERE REPORT_DATE =LAST_DAY(:START_DATE);
+	
+-- =====================================================
+-- 1. CREATE BASE TABLES AND VIEWS
+-- =====================================================
+--duelist and booking report first of every month
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.m_finaldeliquency_base1 AS
+SELECT *,
+       LPAD(loan_no::STRING, 15, ''0'') AS loan_no_str,
+       DATE(last_received_date_knockoff_date) AS last_emi_received_date
+FROM DISHA_L2_CURATED.HISTORICAL_LOAD.COLL_DUELIST WHERE DATE(EXTRACTED_DATE)=DATEADD(DAY,1,:MONTH_END_DATE);
+
+-- =============================================================================
+-- 3. PARENT LOANS PROCESSING
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.vwe_ln_x_loan_collateral_linkage AS
+SELECT 
+    trim(cod_acct_no) AS cod_acct_no,
+    trim(primary_acct) AS primary_acct
+FROM REG_UAT_BACKUP.FLEX_LMS.vwe_ln_x_loan_collateral_linkage 
+WHERE cod_acct_no <> primary_acct
+  AND activation_flag = 1
+QUALIFY ROW_NUMBER() OVER (PARTITION BY cod_acct_no ORDER BY cod_acct_no) = 1;
+
+-- =============================================================================
+-- 4. ASSET DATA PROCESSING
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.asset_data AS 
+SELECT 
+    a.cod_acct_no,
+    c.*, 
+    d.flt_area 
+FROM (
+    SELECT * 
+    FROM REG_UAT_BACKUP.FLEX_LMS.BA_COLL_PROP_EXT 
+    WHERE flg_mnt_status = ''A'' 
+      AND activation_flag = 1
+) c
+LEFT JOIN (
+    SELECT 
+        a.cod_acct_no, 
+        cod_collat_id 
+    FROM (
+        SELECT 
+            cod_acct_no, 
+            amt_coll_value, 
+            cod_collat_id 
+        FROM REG_UAT_BACKUP.FLEX_LMS.ba_ho_coll_acct_xref 
+        WHERE flg_coll_sec = ''P'' 
+          AND activation_flag = 1
+    ) a
+    INNER JOIN (
+        SELECT 
+            cod_acct_no, 
+            MAX(amt_coll_value) AS amt_coll_value 
+        FROM REG_UAT_BACKUP.FLEX_LMS.ba_ho_coll_acct_xref 
+        WHERE flg_coll_sec = ''P'' 
+          AND activation_flag = 1
+        GROUP BY cod_acct_no
+    ) b ON b.cod_acct_no = a.cod_acct_no 
+       AND a.amt_coll_value = b.amt_coll_value
+) a ON a.cod_collat_id = c.cod_collat_id
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ba_coll_prop d ON d.cod_collat_id = c.cod_collat_id 
+                                AND d.activation_flag = 1;
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.asset_data2 AS
+SELECT *
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.asset_data
+QUALIFY ROW_NUMBER() OVER (PARTITION BY cod_acct_no ORDER BY dat_last_mnt DESC) = 1;
+
+-- =============================================================================
+-- 5. BOOKING REPORT PROCESSING
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.booking_report AS 
+SELECT 
+    CAST(new_loan_account_number AS STRING) AS cod_acct_no,
+    loan_tenure AS loan_tenure_for_rajat,
+    remaining_tenure,
+    original_loan_tenure,
+    rate_of_interest AS irr,
+    loan_sanction_roi,
+    category,
+    source_type,
+    asset_collateral_value,
+    property_area,
+    property_state AS state_property,
+    foir,
+    loan_application_number,
+    loan_sanction_rate_method,
+    gender
+from DISHA_L2_CURATED.HISTORICAL_LOAD.BOOKING_REPORT where DATE(extracted_date)=DATEADD(DAY,1,:MONTH_END_DATE);
+
+-- =============================================================================
+-- 7. CHARGES PROCESSING
+-- =============================================================================
+
+-- Calculate insurance charges
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loan_charges_1 AS
+SELECT 
+    a.*,
+	PROCESSING_FEES_SC_CODE_1106 AS Processing_Fees,
+    SERVICE_CHARGE_PDD_SC_CODE_1153 AS SERVICE_CHARGE_PDD ,
+    ADMINISTRATIVE_FEES_SC_CODE_1441 AS ADMINISTRATIVE_FEES,
+    LEGAL_CHARGES_SC_CODE_1123 AS LEGAL_CHARGES,
+    VALUATION_CHARGES_SC_CODE_1122 AS VALUATION_CHARGES,
+    STAMPING_CHARGES_SC_CODE_1120 AS Stamping_Charges,
+    RCU_CHARGES_SC_CODE_1258 AS RCU_Charges,
+    (COALESCE(BAJAJ_ALLIANZ_GENERAL, 0) +
+     COALESCE(BAJAJ_ALLIANZ, 0) +
+     COALESCE(BHARTI_AXA_LIFE_INSURANCE_SC_CODE_443, 0) +
+     COALESCE(CARE_HEALTH_INSURANCE_SC_CODE_446, 0) +
+     COALESCE(FUTURE_GENERALI_INSURANCE, 0) +
+     COALESCE(INSURANCE_PREMIUM_HDFC_LIFE_SC_CODE_254, 0) +
+     COALESCE(ICICI_LOMBARD_PROPERTY_INSURANCE_SC_CODE_439, 0) +
+     COALESCE(ICICI_LOMBARD_GIC_LIMITED, 0) +
+     COALESCE(ICICI_LIFE_INSURANCE_SC_CODE_442, 0) +
+     COALESCE(INSURANCE, 0) +
+     COALESCE(KOTAK_ORACLE, 0) +
+     COALESCE(LOAN_SURAKSHA, 0) +
+     COALESCE(RELIGARE_HEALTH_INSURANCE_CO, 0) +
+     COALESCE(SHRIRAM_PROPERTY_INSURANCE_SC_CODE_160, 0)) AS INSU_CHARGES
+FROM REG_UAT_BACKUP.BASE_MODEL_DATA.CHARGES_CONSOLIDATED_ORACLE a 
+WHERE LOAN_NUMBER_NEW IS NOT NULL and activation_flag=1;
+
+
+-- =============================================================================
+-- 8. LOAN RATE METHOD
+-- =============================================================================
+----Logic for ROI Type from L1 table
+/*
+CREATE OR REPLACE TEMPORARY TABLE account_rate_data AS 
+  SELECT 
+    acc.COD_ACCT_NO,
+    -- Get the latest rate definition type
+    COALESCE(rates.cod_defn_typ, 2) as cod_defn_typ,
+    prod.FLG_RAT_REV,
+    repricing.COD_REPRICING_BEHAVIOUR,
+    repricing.COD_FREQ,
+    COALESCE(repricing_ext.CTR_NO_OF_YEARS, 0) as CTR_NO_OF_YEARS
+  FROM (SELECT * FROM DISHA_L1_HARMONIZED.FLEX_LMS.ln_acct_dtls WHERE flg_mnt_status = ''A'' AND activation_flag = 1) acc
+  
+  -- Get latest rate definition for each account (SCD table)
+  LEFT JOIN (
+    SELECT 
+      r1.cod_acct_no,
+      r1.cod_defn_typ,
+      ROW_NUMBER() OVER (
+        PARTITION BY r1.cod_acct_no 
+        ORDER BY r1.ctr_amd_no DESC, r1.ctr_from_dat_slab DESC
+      ) as rn
+    FROM DISHA_L1_HARMONIZED.FLEX_LMS.ln_acct_rates_detl r1
+    WHERE r1.ctr_int_srl = 0
+      AND r1.ctr_from_dat_slab <= CURRENT_DATE()
+      AND r1.activation_flag = 1  -- SCD condition
+  ) rates ON rates.cod_acct_no = acc.COD_ACCT_NO AND rates.rn = 1
+  -- Get product master data (SCD table)
+  LEFT JOIN DISHA_L1_HARMONIZED.FLEX_LMS.ln_prod_mast prod 
+    ON prod.COD_PROD = acc.COD_PROD 
+    AND prod.flg_mnt_status = ''A''
+    AND prod.activation_flag = 1  -- SCD condition
+  
+  -- Get repricing revision data (SCD table)
+  LEFT JOIN DISHA_L1_HARMONIZED.FLEX_LMS.ln_acct_repricing_revision repricing 
+    ON repricing.COD_ACCT_NO = acc.COD_ACCT_NO 
+    AND repricing.FLG_MNT_STATUS = ''A''
+    AND repricing.activation_flag = 1  -- SCD condition
+  
+  -- Get repricing extension data (SCD table)
+  LEFT JOIN DISHA_L1_HARMONIZED.FLEX_LMS.ln_acct_repricing_revision_ext repricing_ext 
+    ON repricing_ext.COD_ACCT_NO = acc.COD_ACCT_NO 
+    AND repricing_ext.FLG_MNT_STATUS = ''A''
+    AND repricing_ext.activation_flag = 1  -- SCD condition
+);
+
+SELECT 
+  COD_ACCT_NO as account_number,
+  CASE 
+    -- If cod_defn_typ is 0, return ''Fixed''
+    WHEN cod_defn_typ = 0 THEN ''Fixed''
+    
+    -- If FLG_RAT_REV is 0 or NULL, return ''Fixed''  
+    WHEN COALESCE(FLG_RAT_REV, 0) = 0 THEN ''Fixed''
+    
+    -- If no repricing data found, return ''Floating''
+    WHEN COD_REPRICING_BEHAVIOUR IS NULL THEN ''Floating''
+    
+    -- For accounts with repricing behavior, you can add more specific logic here
+    -- This is where the AP_X_LN_GET_RATE_METHOD logic would go
+    -- For now, classifying based on repricing behavior patterns:
+    WHEN COD_REPRICING_BEHAVIOUR = 1 AND COD_FREQ > 0 THEN ''Floating''
+    WHEN COD_REPRICING_BEHAVIOUR = 2 AND CTR_NO_OF_YEARS > 0 THEN ''Fixed''
+    
+    -- Default case
+    ELSE ''Floating''
+    
+  END as rate_type,
+  
+  -- Additional informational columns (optional - remove if not needed)
+  cod_defn_typ,
+  FLG_RAT_REV,
+  COD_REPRICING_BEHAVIOUR,
+  COD_FREQ,
+  CTR_NO_OF_YEARS
+  
+FROM account_rate_data
+ORDER BY COD_ACCT_NO;*/
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loan_rate_method AS
+SELECT 
+    Trim(LOAN_NO) as cod_acct_no,
+    LOAN_RATE_METHOD AS current_rate_method
+FROM REG_UAT_BACKUP.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS 
+WHERE activation_flag = 1;
+
+-- =============================================================================
+-- 9. FC DEMOGRAPHIC DATA
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.FC_demographic_data AS
+SELECT 
+    Trim(LOAN_NO) as cod_acct_no,
+    TYPE_LOAN AS type_of_loan_FC,
+	PROPERTY_IDENTIFIER AS property_identifier_FC,
+	Transaction_Structure AS Transaction_Structure_FC,
+	Transaction_Execution_Mode AS Transaction_Execution_Mode_FC,
+	Credit_decision_identifier AS Credit_decision_identifier_FC,
+    end_use_for_msme 
+FROM REG_UAT_BACKUP.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS 
+WHERE activation_flag = 1;
+
+-- =============================================================================
+-- 10. MAIN LOAN DUMP CREATION
+-- =============================================================================
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle AS
+SELECT DISTINCT
+    TRIM(a.Loan_No) as Loan_no,
+    SUBSTR(TRIM(a.Loan_No), 9, 6) AS loan_id,
+	
+    b.Cust_ID_flex AS Customer_ID,
+    a2.txt_acct_status AS Loan_Status,
+	
+    a.LOAN_SANCTION_AMOUNT AS Loan_Amount,
+    a.DISB_AMOUNT AS Disbursal_Amount,
+    a.LOAN_INITIATION_DATE AS Loan_Author_Date,
+    a.FIRST_DISBURSAL_DATE,
+    a.LAST_DISBURSAL_DATE,
+    a.LOAN_MATURITY_DATE,
+    a.LOAN_CLOSURE_DATE AS Loan_Termination_Date,
+    CASE
+        WHEN a.DISB_AMOUNT = 0 THEN ''NOT DISBURSED''
+        WHEN a.DISB_AMOUNT < a.LOAN_SANCTION_AMOUNT THEN ''PARTIALLY DISBURSED''
+        ELSE ''FULLY DISBURSED''
+    END AS Disbursal_Status,
+    a.PRINCIPAL_OUTSTANDING AS Total_POS,
+    CASE WHEN a.PRODUCT_CATEGORY = ''5'' THEN ''NHL'' ELSE a.PRODUCT_CATEGORY END AS prod_category,
+    '''' AS Total_for_Provision,
+    0 AS Provision,
+    a1.current_rate_method AS Loan_rate_method,
+    f.loan_tenure_for_rajat,
+    f.remaining_tenure,
+    f.original_loan_tenure,
+    f.category,
+    f.source_type,
+    f.asset_collateral_value,
+    f.property_area,
+    f.state_property,
+    f.loan_sanction_rate_method,
+    f.gender,
+	
+    a.Loan_Tenure,
+    
+	f.irr AS irr,
+    j.txt_fatherspouse_name AS Father_or_Husband_Name,
+    CONCAT_WS('','', b.cust_address1, b.cust_address2, b.cust_address3) AS Address,
+    COALESCE(p.mobile_number__c, custmast.ref_cust_phone) AS Primary_Phone,
+    COALESCE(p.alternate_number__pc, custmast.ref_cust_phone_off) AS Alternate_Phone,
+    CASE WHEN custmast.NAM_CUSTADR_CNTRY = ''IN'' THEN ''INDIA'' END AS Country,
+    b.cust_state AS State,
+    j.TXT_CUSTADR_DISTRICT AS District,
+    b.cust_tehsil AS Tahsil,
+    b.cust_pincode AS Pincode,
+    CONCAT_WS('','', h.txt_prop_addr1, h.txt_prop_addr2, h.txt_prop_addr3 ) AS Property_Full_Address,
+    CONCAT_WS('','', h.txt_prop_addr1, h.txt_prop_addr2, h.txt_prop_addr3) AS Property_Asset_Address,
+    h.txt_landmark AS Village_Name_Landmark,
+    h.cod_tehsil AS Tahsil_Property,
+    h.cod_district AS District_Property,
+    h.cod_pincode AS Pincode_Asset,
+    h.flt_area AS Property_Area_lms,
+    h.nam_coll_owner AS Property_Owner,
+    i.nam_coll AS Asset_Collateral_Desc,
+    '''' AS Loan_Sector_Type,
+    TRIM(b.Customer_Profile) AS Customer_Constitution,
+    COALESCE(UPPER(p.pan__c), UPPER(TRIM(b.pan_number))) AS PAN,
+    CASE
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''P'' THEN ''INDIVIDUAL''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) IN (''C'', ''F'') THEN ''COMPANY_FIRM''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''H'' THEN ''HINDU UNDIVIDED FAMILY''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''A'' THEN ''ASSOCIATION OF PERSONS''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''T'' THEN ''TRUST''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''B'' THEN ''BODY OF INDIVIDUALS''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''L'' THEN ''LOCAL AUTHORITY''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''J'' THEN ''Artifical JURIDICAL PERSON''
+        WHEN UPPER(SUBSTR(TRIM(b.pan_number), 4, 1)) = ''G'' THEN ''GOVERNMENT AGENCY''
+        ELSE ''UNKNOWN''
+    END AS Customer_PAN_Flag,
+    CASE
+        WHEN UPPER(TRIM(b.Customer_Type)) = ''C'' THEN ''CORPORATE_FIRM''
+        WHEN UPPER(TRIM(b.cust_gender)) = ''F'' THEN ''FEMALE''
+        WHEN UPPER(TRIM(b.cust_gender)) = ''M'' THEN ''MALE''
+        ELSE TRIM(b.cust_gender)
+    END AS Gender_lms,
+    CASE
+        WHEN UPPER(TRIM(b.Customer_Type)) = ''I'' THEN ''INDIVIDUAL''
+        WHEN UPPER(TRIM(b.Customer_Type)) = ''C'' THEN ''CORPORATE''
+        ELSE UPPER(TRIM(b.Customer_Type))
+    END AS Customer_Type,
+    a.BRANCH_NAME AS Branch,
+    a.Branch_State,
+    CASE
+        WHEN TRIM(a.LOAN_PRODUCT_NAME) IN (''Other Loans - MSME'', ''Other Loans - Home Equity'') THEN ''Other Loans''
+        WHEN TRIM(a.LOAN_PRODUCT_NAME) IN (''Purchase and Construction'') THEN ''Construction''
+        ELSE TRIM(a.LOAN_PRODUCT_NAME)
+    END AS Product_NHB,
+    TRIM(a.LOAN_PRODUCT_NAME) AS Product,
+    CASE
+        WHEN TRIM(a.LOAN_SCHEME) = ''G'' THEN ''General''
+        WHEN TRIM(a.LOAN_SCHEME) = ''EL'' THEN ''Employee Loan''
+        WHEN TRIM(a.LOAN_SCHEME) = ''S'' THEN ''STS''
+        WHEN TRIM(a.LOAN_SCHEME) = ''AS'' THEN ''ACE STS''
+        ELSE TRIM(a.LOAN_SCHEME)
+    END AS Scheme,
+    a.LOAN_SANCTION_AMOUNT - a.DISB_AMOUNT AS Pending_Disbursal_Amount1,
+    a.LTV_PERC AS LTV,
+    a.ADVANCE_INSTAL_AMT AS Loan_Advance_Instl,
+    COALESCE(p.dob__c, DATE(b.date_of_birth)) AS DOB,
+    TRIM(b.Customer_Profile) AS Occupation,
+    a.COMBINED_LTV,
+    CASE
+        WHEN UPPER(TRIM(b.Customer_Profile)) LIKE ''%SAL%'' OR UPPER(txt_cust_typ) LIKE ''%COMP%''
+             OR TRIM(b.Customer_Profile) IN (''Retired / Pensioner'', ''Employee'', ''IAP Private Limited Company'') THEN ''SAL''
+        WHEN TRIM(b.Customer_Profile) IN (''Public Private Partnership'', ''SOCIETY / TRUST'', ''Partnership Firm'',
+                                ''AOP(ASSOC. OF PERSON)'', ''Self Employed Professional'',
+                                ''LLP-LIMITED LIABILITY PARTNERSHIP'', ''Sole Proprietorship'',
+                                ''Joint Venture'', ''Self Employed Businessperson'') THEN ''SEMP''
+        WHEN TRIM(b.Customer_Profile) IN (''Not Working'', ''Student'', ''Homemaker'') THEN ''Not Working''
+        ELSE TRIM(b.Customer_Profile)
+    END AS Cust_Profile_ID,
+    CASE
+        WHEN UPPER(TRIM(b.Customer_Profile)) LIKE ''%SAL%'' OR UPPER(txt_cust_typ) LIKE ''%COMP%''
+             OR TRIM(b.Customer_Profile) IN (''Retired / Pensioner'', ''Employee'', ''IAP Private Limited Company'') THEN ''SALARIED''
+        WHEN TRIM(b.Customer_Profile) IN (''Public Private Partnership'', ''SOCIETY / TRUST'', ''Partnership Firm'',
+                                ''AOP(ASSOC. OF PERSON)'', ''Self Employed Professional'',
+                                ''LLP-LIMITED LIABILITY PARTNERSHIP'', ''Sole Proprietorship'',
+                                ''Joint Venture'', ''Self Employed Businessperson'') THEN ''SELF-EMPLOYED''
+        ELSE TRIM(b.Customer_Profile)
+    END AS Cust_Profile_Desc,
+    p.business_profile__c AS Cust_Sub_Profile_Desc1,
+    z.primary_acct AS parent_loan_no
+FROM (SELECT * FROM REG_UAT_BACKUP.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS WHERE ACTIVATION_FLAG=1)a
+LEFT JOIN REG_UAT_BACKUP.BASE_MODEL_DATA.CUSTOMER_DETAILS_FLEXCUBE b ON b.CUST_ID_FLEX = a.CUST_ID_FLEX 
+                               AND b.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUSTMAST custmast ON custmast.cod_cust_id = a.CUST_ID_FLEX AND custmast.activation_flag = 1
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.booking_report f ON TRIM(f.cod_acct_no) = TRIM(a.LOAN_NO)
+LEFT JOIN (
+    SELECT 
+        loan_no, 
+        SUM(Collateral_value) AS amt_collat_value 
+    FROM REG_UAT_BACKUP.BASE_MODEL_DATA.COLLATERAL_DETAILS_FLEXCUBE
+    WHERE TRIM(Collateral_Secured_Flag) = ''P'' 
+      AND activation_flag = 1
+    GROUP BY loan_no
+) n ON TRIM(n.loan_no) = TRIM(a.LOAN_NO)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.asset_data2 h ON TRIM(h.cod_acct_no) = TRIM(a.LOAN_NO)
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.BA_COLL_CODES i ON i.cod_coll = h.cod_coll 
+                                 AND i.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUSTMAST_EXT j ON j.cod_cust_id = a.CUST_ID_FLEX
+                                   AND j.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUST_TYPES k ON TRIM(k.flg_cust_typ) = TRIM(custmast.flg_cust_typ)
+                                 AND k.activation_flag = 1
+
+LEFT JOIN REG_UAT_BACKUP.SFDC_LOS.ACCOUNT p 
+ON CAST(SUBSTR(p.customer_id__c, LENGTH(p.customer_id__c) - 6) AS INTEGER) =TRIM(a.CUST_ID_FLEX)
+	AND UPPER(p.isdeleted) = ''FALSE''
+    AND p.activation_flag = 1
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.vwe_ln_x_loan_collateral_linkage z ON TRIM(z.cod_acct_no) = TRIM(a.LOAN_NO)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.loan_rate_method a1 ON TRIM(a1.cod_acct_no) = TRIM(a.LOAN_NO)
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ba_acct_status a2 ON TRIM(a2.cod_acct_status) = TRIM(a.LOAN_STATUS)
+                                   AND a2.cod_module = ''LN'' 
+                                   AND a2.activation_flag = 1
+WHERE a.activation_flag = 1;
+
+-- =============================================================================
+-- 11. FOIR CALCULATION
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.foir AS
+SELECT 
+    TRIM(cod_acct_no) AS loan_no,
+    CASE 
+        WHEN brn.foir = 0 THEN 
+            CASE 
+                WHEN ABS(TRY_CAST(lac.foir__c AS FLOAT)) >= 100 THEN 100 
+                ELSE ABS(TRY_CAST(foir__c AS FLOAT)) 
+            END
+        WHEN brn.foir = 0 AND TRIM(lac.foir__c) = '''' THEN 0
+        ELSE 
+            CASE 
+                WHEN brn.foir >= 100 THEN 100 
+                ELSE brn.foir 
+            END
+    END AS foir_f
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.booking_report brn 
+LEFT JOIN REG_UAT_BACKUP.SFDC_LOS.loan_application__c lac ON REPLACE(CAST(TRIM(brn.loan_application_number) AS STRING), ''-'', '''') = REPLACE(TRIM(lac.name), ''-'', '''')
+AND lac.activation_flag = 1;
+
+-- =============================================================================
+-- 12. ENHANCED LOAN DUMP WITH ADDITIONAL ATTRIBUTES
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle1 AS
+SELECT 
+    a10.cod_acct_no_old AS loan_no_old,
+    a.*,
+    SUBSTR(q.pool_id, 15, 2) AS Pool_ID,
+    COALESCE(q.pool_name, q1.cod_acct_no_nhb) AS Pool_Name,
+    q1.cod_acct_no_nhb,
+    COALESCE(z.assignee_name, q1.txt_nhb_loan_name) AS Agency_Name,
+    q1.txt_nhb_loan_name,
+    d.foir_f AS Foir,
+    COALESCE(a.Cust_Sub_Profile_Desc1, c.txt_business) AS customer_sub_profile_desc,
+    q.gross_income / 12 AS income_lms
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle a
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_ACCT_ATTRIBUTES_EXT q ON TRIM(q.cod_acct_no) = TRIM(a.loan_no )
+                                          AND q.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_X_POOL_ID_ATTRIBUTES z ON TRIM(z.pool_id) = TRIM(q.pool_id )
+                                           AND z.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ci_business_types c ON TRIM(c.cod_business_cat) = TRIM(q.lan_level_sub_profile )
+                                     AND c.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ln_x_old_new_acct_xref a10 ON TRIM(a10.cod_acct_no_new) = TRIM(a.loan_no )
+                                            AND a10.activation_flag = 1
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.foir d ON TRIM(d.loan_no) = TRIM(a.loan_no)
+LEFT JOIN (
+    SELECT * 
+    FROM REG_UAT_BACKUP.FLEX_LMS.ln_x_acct_tagging_dtls 
+    WHERE cod_acct_tagging = ''NR'' 
+      AND activation_flag = 1
+) q1 ON TRIM(q1.cod_acct_no) = TRIM(a.loan_no);
+
+-- =============================================================================
+-- 13. ASSET CLASSIFICATION
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle2 AS
+SELECT DISTINCT 
+    a.*,
+    w.txt_crr_desc AS Asset_Classification
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle1 a
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.AC_ACCT_CRR_CODE s ON TRIM(s.cod_acct_no) = TRIM(a.loan_no) 
+                                    AND s.activation_flag = 1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.AC_CRR_CODES w ON TRIM(s.cod_crr_cust) = TRIM(w.cod_crr) 
+                                AND w.activation_flag = 1;
+
+-- =============================================================================
+-- 14. REPAYMENT MODE
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.repayment_mode AS
+SELECT 
+    cod_benef_acct_no,
+    CASE
+        WHEN cod_payment_type = ''1'' THEN ''NACH''
+        WHEN cod_payment_type = ''2'' THEN ''ECS''
+        ELSE cod_payment_type
+    END AS loan_repayment_mode,
+    dat_mandate_start
+FROM REG_UAT_BACKUP.FLEX_LMS.pm_x_mandate_mast 
+WHERE activation_flag = 1
+QUALIFY ROW_NUMBER() OVER (PARTITION BY cod_benef_acct_no ORDER BY dat_mandate_start DESC) = 1;
+
+-- =============================================================================
+-- 15. COMPREHENSIVE LOAN DUMP WITH ALL ATTRIBUTES
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle3 AS
+SELECT 
+    a.*,
+    a3.income AS financial_month,
+    UPPER(a11.rural_urban) AS asset_level,
+    a6.Processing_Fees,
+	a6.Service_Charge_PDD,
+	a6.Administrative_Fees,
+	a6.LEGAL_CHARGES,
+	a6.VALUATION_CHARGES,
+	a6.Stamping_Charges,
+	a6.Cersai_Registration_Charges,
+	a6.RCU_Charges,
+	a6.INSU_Charges,
+	a6.Charges_Deducted_At_Disbursement,
+	a6.INSURANCE,
+	a6.LOAN_SURAKSHA,
+	a6.KOTAK_ORACLE AS KOTAK_LIFE_INSURANCE,
+	a6.SERVICE_CHARGE_PDD_KOT,
+	a6.SHRIRAM_PROPERTY_INSURANCE_SC_CODE_160 AS SHRIRAM_PROPERTY_INSURANCE,
+	a6.FUTURE_GENERALI_INSURANCE,
+	a6.CHEQUE_BOUNCING_CHARGES,
+	a6.CHEQUE_CANCELLATION_CHARGES,
+	a6.INSURANCE_PREMIUM_HDFC_LIFE_SC_CODE_254 AS HDFC_LIFE_INSURANCE_COMPANY_LIMI,
+	a6.SERVICE_CHARGE_PDD_HDF,
+	a6.CASH_COLLECTION_CHARGES,
+	a6.RELIGARE_HEALTH_INSURANCE_CO,
+	a6.LEGAL_CASE_FILED_CHARGES,
+	a6.COLLECTION_FOLLOW_UP_CHARGES,
+	a6.EQUITABLE AS EQUITABLE_MORTGAGE_FEES,
+	a6.EXCEPTIONAL_STATEMENT_CHARGES,
+	a6.DOCUMENT_COPY_CHARGES,
+	a6.SWITCH_FEES,
+	a6.BAJAJ_ALLIANZ AS BAJAJ_ALLIANZ_LIFE_INSURANCE,
+	a6.COMPLETION_CERTIFICATE_CHARGE,
+	a6.ICICI_LOMBARD_GIC_LIMITED,
+	a6.ROC_CHARGES_CREATION_EXPENSES,
+	a6.ICICI_LIFE_INSURANCE_SC_CODE_442 AS ICICI_PRUDENTIAL_LIFE_INSURANCE,
+	a6.LOAN_CANCELLATION_CHARGES,
+	a6.SUBSEQUENT_TRANCHE_VISIT_CHARGE,
+	a6.ICICI_LOMBARD_GIC_LIMITED AS ICICI_LOMBARD_GENERAL_INSURANCE,
+	a6.BHARTI_AXA_LIFE_INSURANCE_SC_CODE_443 AS BHARTI_AXA_LIFE_INSURANCE,
+	a6.CARE_HEALTH_INSURANCE_SC_CODE_446 AS CARE_PROTECTION_PLAN,
+	a6.ODV_CHARGES,
+	a6.RPDC_COLLECTION_BY_VISIT_TO_CUSTOMER_CHA AS RPDC_COLLECTION_BY_VISIT_TO_CUST,
+	a6.SWAPPING_CHARGES,
+	a6.BAJAJ_ALLIANZ_GENERAL AS BAJAJ_ALLIANZ_GENERAL_INSURANCE,
+    a7.hub AS HUB,
+    a1.loan_repayment_mode
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle2 a
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.repayment_mode a1 ON a1.cod_benef_acct_no = a.loan_no
+LEFT JOIN REG_UAT_BACKUP.BASE_MODEL_DATA.CR_MONTHLY_INCOME_DETAILS a3 ON TRIM(a3.lan_new) = TRIM(a.loan_no)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.loan_charges_1 a6 ON TRIM(a6.LOAN_NUMBER_NEW) = TRIM(a.loan_no)
+LEFT JOIN DISHA_L2_CURATED.HISTORICAL_LOAD.loanDump_BRANCH_MASTER a7 ON UPPER(TRIM(a7.branch)) = UPPER(TRIM(a.branch))
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ln_x_old_new_acct_xref a10 ON a10.cod_acct_no_new = a.loan_no 
+                                            AND a10.activation_flag = 1
+LEFT JOIN (
+    SELECT 
+        loan_no,
+        rural_urban
+    FROM REG_UAT_BACKUP.BASE_MODEL_DATA.RURAL_URBAN_TAGGING
+    Qualify row_number() over (partition by loan_no order by report_date desc)=1
+) a11 ON trim(a11.loan_no) = trim(a10.cod_acct_no_old);
+
+-- =============================================================================
+-- 16. FINAL LOAN DUMP WITH EMI AND DUE DETAILS
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle4 AS
+SELECT 
+    a.*,
+    (y.total_pos + y.TOTAL_DUE + y.PRE_EMI) AS total_outstanding,
+    y.total_billed_instl_no AS emi_billed,
+    y.last_emi_received_Date,
+    y.first_emi_date AS Repayment_Start_Date,
+    y.dpd AS dpd_emi_pemi,
+    y.total_pos AS total_pos_dl,
+    y.CURRENT_MONTH_INSTLA AS emi_amount
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loanDump_Oracle3 a
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.m_finaldeliquency_base1 y ON TRIM(y.loan_no_str) = TRIM(a.loan_no);
+
+-- =============================================================================
+-- 17. POS CALCULATION FOR HL AND NHL
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loandump_oracle5 AS
+SELECT *,
+    CASE 
+        WHEN TRIM(prod_category) = ''HL'' AND disbursal_amount > 0 THEN
+            ROUND(total_pos - (Charges_Deducted_At_Disbursement / disbursal_amount) * total_pos, 2)
+        ELSE 0
+    END AS POS_HL,
+    CASE 
+        WHEN TRIM(prod_category) IN (''NHL'', ''5'') THEN
+            ROUND(total_pos, 2)
+        WHEN total_pos > 0 THEN
+            ROUND((Charges_Deducted_At_Disbursement / disbursal_amount) * total_pos, 2)
+        ELSE 0
+    END AS POS_NHL
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loandump_oracle4;
+
+-- =============================================================================
+-- 18. FINAL BASE TABLE WITH FC DEMOGRAPHIC DATA
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.loan_dump_base AS
+SELECT 
+    a.*, 
+    c.*
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loandump_oracle5 a
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.FC_demographic_data c ON c.cod_acct_no = a.loan_no
+WHERE UPPER(a.loan_status) LIKE ''%OPEN%'' 
+   OR (UPPER(a.loan_status) LIKE ''%CLOSED%'' AND DATE(a.loan_termination_date) >= ''2024-04-01'');
+
+-- =============================================================================
+-- 19. GL (GENERAL LEDGER) DATA PROCESSING
+-- =============================================================================
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.gl AS
+SELECT 
+    accountno_d, 
+    custname_d, 
+    CASE 
+        WHEN TRIM(glname_h) IN (''Suspended Interest Receivable On Non Housing Loan'', 
+                         ''Suspended Interest Receivable On Housing Loan'') 
+        THEN ''Suspended Interest Receivable'' 
+        ELSE TRIM(glname_h)
+    END AS gl_name, 
+    SUM(net_d) AS net_d
+FROM (
+    SELECT  
+        a.cod_acct_no AS accountno_d,
+        a.cod_gl_acct AS glacctname_h,
+        gl.nam_gl_acct AS glname_h,
+        ln.nam_cust_shrt AS custname_d,
+        COALESCE(SUM(CASE WHEN a.cod_drcr = ''D'' THEN a.amt_txn_lcy ELSE 0 END), 0) AS debit_d,
+        COALESCE(SUM(CASE WHEN a.cod_drcr = ''C'' THEN a.amt_txn_lcy ELSE 0 END), 0) AS credit_d,
+        COALESCE(
+            SUM(CASE WHEN a.cod_drcr = ''D'' THEN a.amt_txn_lcy ELSE 0 END) -
+            SUM(CASE WHEN a.cod_drcr = ''C'' THEN a.amt_txn_lcy ELSE 0 END),
+            0
+        ) AS net_d
+    FROM (SELECT * FROM REG_UAT_BACKUP.FLEX_LMS_L1_0725.xf_stcap_gl_txns_mmdd WHERE ACTIVATION_FLAG=1) a
+    
+    -- JOIN instead of correlated subquery for GL account names
+    LEFT JOIN (SELECT * FROM REG_UAT_BACKUP.FLEX_LMS_L1_0725.gl_table  WHERE ACTIVATION_FLAG=1 AND flg_mnt_status = ''A'')  gl 
+        ON gl.cod_gl_acct = a.cod_gl_acct 
+        
+    
+    -- JOIN instead of correlated subquery for customer names
+    LEFT JOIN (SELECT * FROM REG_UAT_BACKUP.FLEX_LMS_L1_0725.ln_acct_dtls   WHERE ACTIVATION_FLAG=1 AND flg_mnt_status = ''A'') ln 
+        ON ln.cod_acct_no = a.cod_acct_no 
+      
+    
+    WHERE a.cod_gl_acct IN (
+        11050101, 11050103, 11050104, 11050102, 11050105, 11050106,
+        11050201, 11050202, 11050205, 11050206, 11050209, 11050210,
+        11050211, 11050212, 21070904, 21070905
+    ) 
+    AND DATE(a.dat_txn_posting) BETWEEN ''2024-08-01''::DATE AND :MONTH_END_DATE
+
+
+    -- Fixed GROUP BY to include all non-aggregate columns
+    GROUP BY 
+        a.cod_gl_acct,
+        a.cod_acct_no,
+        gl.nam_gl_acct,
+        ln.nam_cust_shrt
+) 
+GROUP BY 1,2,3;
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.transposed_gl AS
+SELECT accountno_d, 
+       custname_d,
+       SUM(CASE WHEN gl_name = ''Interest Receivable On Housing Loan'' THEN net_d ELSE 0 END) as Interest_Receivable_On_Housing_L,
+       SUM(CASE WHEN gl_name = ''Interest Receivable on Non Housing Loan'' THEN net_d ELSE 0 END) as Interest_Receivable_on_Non_Housi,
+       SUM(CASE WHEN gl_name = ''Suspended Interest Receivable'' THEN net_d ELSE 0 END) as Suspended_Interest_Receivable_dr,
+       SUM(CASE WHEN gl_name = ''Interest Earned But Not Due On Housing Loan'' THEN net_d ELSE 0 END) as Interest_Earned_But_Not_Due_On_H,
+       SUM(CASE WHEN gl_name = ''Interest Earned But Not Due On Non Housing Loan'' THEN net_d ELSE 0 END) as Interest_Earned_But_Not_Due_On_N,
+       SUM(CASE WHEN gl_name = ''Suspended Interest Accrued On Housing Loan'' THEN net_d ELSE 0 END) as Suspended_Interest_Accrued_On_Ho,
+       SUM(CASE WHEN gl_name = ''Suspended Interest Accrued On Non Housing Loan'' THEN net_d ELSE 0 END) as Suspended_Interest_Accrued_On_No,
+       SUM(CASE WHEN gl_name = ''Standard Housing Loan'' THEN net_d ELSE 0 END) as Standard_Housing_Loan_drcr,
+       SUM(CASE WHEN gl_name = ''NPA Housing Loan'' THEN net_d ELSE 0 END) as NPA_Housing_Loan_drcr,
+       SUM(CASE WHEN gl_name = ''Standard Non Housing Loan'' THEN net_d ELSE 0 END) as Standard_Non_Housing_Loan_drcr,
+       SUM(CASE WHEN gl_name = ''NPA Non Housing Loan'' THEN net_d ELSE 0 END) as NPA_Non_Housing_Loan_drcr,
+       SUM(CASE WHEN gl_name = ''Sundry Creditors LMS On Housing Loan'' THEN net_d ELSE 0 END) as Sundry_Creditors_LMS_On_Housing,
+       SUM(CASE WHEN gl_name = ''Sundry Creditors LMS On Non Housing Loan'' THEN net_d ELSE 0 END) as Sundry_Creditors_LMS_On_Non_Hous,
+       SUM(CASE WHEN gl_name = ''Loan Payable On Housing Loan'' THEN net_d ELSE 0 END) as Loan_Payable_On_Housing_Loan_drc,
+       SUM(CASE WHEN gl_name = ''Loan Payable On Non Housing Loan'' THEN net_d ELSE 0 END) as Loan_Payable_On_Non_Housing_Loan
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.gl
+GROUP BY accountno_d, custname_d;
+
+-- =============================================================================
+-- 20. FINAL REPORT WITH ALL CALCULATIONS
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.final_1 AS
+SELECT 
+    d.nam_cust_full AS customer_name,
+    a.*,
+    b.*,
+    (COALESCE(Interest_Receivable_On_Housing_L, 0) + 
+     COALESCE(Interest_Receivable_on_Non_Housi, 0) + 
+     COALESCE(Suspended_Interest_Receivable_dr, 0)) AS Interest_Receivable,
+    (COALESCE(Interest_Earned_But_Not_Due_On_H, 0) + 
+     COALESCE(Interest_Earned_But_Not_Due_On_N, 0) + 
+     COALESCE(Suspended_Interest_Accrued_On_Ho, 0) + 
+     COALESCE(Suspended_Interest_Accrued_On_No, 0)) AS Interest_Accrued,
+    NULL AS MRR,
+    '''' AS Asset_status_as_per_old,
+    NULL AS Pending_disbursment,
+    NULL AS Restructure_2_0,
+    NULL AS Additional_Provisioning_required,
+    '''' AS Provisioning_release,
+    '''' AS Asset_classification_Sep_24_New,
+    '''' AS Asset_classification_Sep_24_Old,
+    '''' AS Total_POS_Sep_24,
+    '''' AS DPD_Provision_Sep_24,
+    '''' AS Difference_DPD,
+    '''' AS Bheem_DPD
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.loan_dump_base a 
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.transposed_gl b ON a.loan_no = b.accountno_d
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ci_custmast d ON d.cod_cust_id = a.customer_id 
+                               AND d.activation_flag = 1;
+
+-- =============================================================================
+-- 21. ADDITIONAL SFDC DATA
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.final_2 AS
+SELECT DISTINCT 
+    lac.lms_loan_number__c,
+    lac.loan_application_id__c,
+    CASE 
+        WHEN LENGTH(loan_application_id__c) = 15 AND SUBSTR(loan_application_id__c, 9, 6) <> ''000000'' 
+        THEN SUBSTR(loan_application_id__c, 9, 6)
+        WHEN SUBSTR(loan_application_id__c, 9, 6) = ''000000'' 
+        THEN SUBSTR(TRIM(lms_loan_number__c), 15, 6)
+        ELSE loan_application_id__c
+    END AS loan_id,
+    gender__c AS gender_los,
+    ac.property_type__c AS type_of_property_sfdc
+FROM REG_UAT_BACKUP.SFDC_LOS.loan_application__c lac
+LEFT JOIN REG_UAT_BACKUP.SFDC_LOS.application_collateral__c ac ON lac.id = ac.loan_application__c 
+                                               AND ac.activation_flag = 1
+WHERE loan_application_id__c IS NOT NULL 
+  AND lac.activation_flag = 1;
+
+-- =============================================================================
+-- 22. FINAL COMPREHENSIVE REPORT
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.final AS
+SELECT 
+    a.*,
+    b.type_of_property_sfdc,
+    b.gender_los
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.final_1 a 
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.final_2 b ON a.loan_id = b.loan_id;
+
+-- Remove duplicates
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.final_f AS
+SELECT *
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.final
+QUALIFY ROW_NUMBER() OVER (PARTITION BY loan_no ORDER BY loan_no) = 1;
+
+-- =============================================================================
+-- 23. FINAL REORDERED OUTPUT TABLE
+-- =============================================================================
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART_PREFINAL (
+	LOAN_NO_OLD	VARCHAR(255),
+	LOAN_NO	VARCHAR(255),
+	CUSTOMER_ID	NUMBER(38,0),
+	CUSTOMER_NAME	VARCHAR(255),
+	LOAN_STATUS	VARCHAR(255),
+	LOAN_AMOUNT	FLOAT,
+	DISBURSAL_AMOUNT	FLOAT,
+	LOAN_AUTHOR_DATE	DATE,
+	FIRST_DISBURSAL_DATE	DATE,
+	LAST_DISBURSAL_DATE	DATE,
+	LOAN_MATURITY_DATE	DATE,
+	LOAN_TERMINATION_DATE	DATE,
+	DISBURSAL_STATUS	VARCHAR(19),
+	PROCESSING_FEES	FLOAT,
+	SERVICE_CHARGE_PDD	FLOAT,
+	ADMINISTRATIVE_FEES	FLOAT,
+	LEGAL_CHARGES	FLOAT,
+	VALUATION_CHARGES	FLOAT,
+	STAMPING_CHARGES	FLOAT,
+	CERSAI_REGISTRATION_CHARGES	FLOAT,
+	RCU_CHARGES	FLOAT,
+	INSU_CHARGES	FLOAT,
+	CHARGES_DEDUCTED_AT_DISBURSEMENT	FLOAT,
+	STANDARD_HOUSING_LOAN_DRCR	FLOAT,
+	NPA_HOUSING_LOAN_DRCR	FLOAT,
+	STANDARD_NON_HOUSING_LOAN_DRCR	FLOAT,
+	NPA_NON_HOUSING_LOAN_DRCR	FLOAT,
+	INTEREST_RECEIVABLE_ON_HOUSING_L	FLOAT,
+	INTEREST_RECEIVABLE_ON_NON_HOUSI	FLOAT,
+	SUSPENDED_INTEREST_RECEIVABLE_DR	FLOAT,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_H	FLOAT,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_N	FLOAT,
+	SUSPENDED_INTEREST_ACCRUED_ON_HO	FLOAT,
+	SUSPENDED_INTEREST_ACCRUED_ON_NO	FLOAT,
+	SUNDRY_CREDITORS_LMS_ON_HOUSING	FLOAT,
+	SUNDRY_CREDITORS_LMS_ON_NON_HOUS	FLOAT,
+	LOAN_PAYABLE_ON_HOUSING_LOAN_DRC	FLOAT,
+	LOAN_PAYABLE_ON_NON_HOUSING_LOAN	FLOAT,
+	INTEREST_RECEIVABLE	FLOAT,
+	INTEREST_ACCRUED	FLOAT,
+	MRR	VARCHAR(255),
+	TOTAL_POS	FLOAT,
+	POS_HL	FLOAT,
+	POS_NHL	FLOAT,
+	TOTAL_FOR_PROVISION	VARCHAR(120),
+	DPD_EMI_PEMI	FLOAT,
+	PROVISION	NUMBER(1,0),
+	ASSET_CLASSIFICATION	VARCHAR(255),
+	ASSET_STATUS_AS_PER_OLD	VARCHAR(1),
+	IRR	FLOAT,
+	LOAN_TENURE	NUMBER(38,0),
+	LOAN_RATE_METHOD	VARCHAR(255),
+	FATHER_OR_HUSBAND_NAME	VARCHAR(255),
+	ADDRESS	VARCHAR(6002),
+	PRIMARY_PHONE	VARCHAR(4938),
+	ALTERNATE_PHONE	VARCHAR(4938),
+	COUNTRY	VARCHAR(500),
+	STATE	VARCHAR(255),
+	DISTRICT	VARCHAR(255),
+	TAHSIL	VARCHAR(255),
+	PINCODE	VARCHAR(255),
+	PROPERTY_FULL_ADDRESS	VARCHAR(2000),
+	PROPERTY_ASSET_ADDRESS	VARCHAR(2000),
+	VILLAGE_NAME_LANDMARK	VARCHAR(2000),
+	TAHSIL_PROPERTY	VARCHAR(255),
+	DISTRICT_PROPERTY	VARCHAR(255),
+	STATE_PROPERTY	VARCHAR(430),
+	PINCODE_ASSET	VARCHAR(255),
+	PROPERTY_AREA	FLOAT,
+	PROPERTY_OWNER	VARCHAR(255),
+	ASSET_LEVEL	VARCHAR(255),
+	ASSET_COLLATERAL_DESC	VARCHAR(255),
+	LOAN_REPAYMENT_MODE	VARCHAR(255),
+	FOIR	FLOAT,
+	LOAN_SECTOR_TYPE	VARCHAR(120),
+	CUSTOMER_CONSTITUTION	VARCHAR(255),
+	CATEGORY	VARCHAR(255),
+	PAN	VARCHAR(14814),
+	CUSTOMER_PAN_FLAG	VARCHAR(26),
+	GENDER_BR VARCHAR(255),
+	GENDER_LMS	VARCHAR(255),
+	CUSTOMER_TYPE	VARCHAR(765),
+	SOURCE_TYPE	VARCHAR(430),
+	BRANCH	VARCHAR(255),
+	HUB	VARCHAR(255),
+	BRANCH_STATE	VARCHAR(255),
+	PRODUCT_NHB	VARCHAR(255),
+	PRODUCT	VARCHAR(255),
+	SCHEME	VARCHAR(255),
+	PENDING_DISBURSAL_AMOUNT1	FLOAT,
+	ASSET_COLLATERAL_VALUE	FLOAT,
+	LTV	FLOAT,
+	EMI_AMOUNT	NUMBER(38,0),
+	REPAYMENT_START_DATE	VARCHAR(255),
+	LOAN_ADVANCE_INSTL	NUMBER(38,0),
+	DOB	DATE,
+	FINANCIAL_MONTH	FLOAT,
+	EMI_BILLED	NUMBER(38,0),
+	LAST_EMI_RECEIVED_DATE	DATE,
+	OCCUPATION	VARCHAR(255),
+	POOL_ID	VARCHAR(255),
+	POOL_NAME	VARCHAR(255),
+	AGENCY_NAME	VARCHAR(255),
+	TOTAL_OUTSTANDING	FLOAT,
+	COMBINED_LTV	FLOAT,
+	PARENT_LOAN_NO	VARCHAR(255),
+	CUST_PROFILE_ID	VARCHAR(255),
+	CUST_PROFILE_DESC	VARCHAR(255),
+	CUSTOMER_SUB_PROFILE_DESC	VARCHAR(4938),
+	PENDING_DISBURSMENT	VARCHAR(255),
+	RESTRUCTURE_2_0	VARCHAR(255),
+	ADDITIONAL_PROVISIONING_REQUIRED	VARCHAR(255),
+	PROVISIONING_RELEASE	VARCHAR(120),
+	ASSET_CLASSIFICATION_SEP_24_NEW	VARCHAR(120),
+	ASSET_CLASSIFICATION_SEP_24_OLD	VARCHAR(120),
+	TOTAL_POS_SEP_24	VARCHAR(1),
+	DPD_PROVISION_SEP_24	VARCHAR(1),
+	DIFFERENCE_DPD	VARCHAR(1),
+	BHEEM_DPD	VARCHAR(1),
+	TYPE_OF_LOAN_FC	VARCHAR(255),
+	CREDIT_DECISION_IDENTIFIER_FC	VARCHAR(255),
+	PROPERTY_IDENTIFIER_FC	VARCHAR(255),
+	END_USE_FOR_MSME	VARCHAR(255),
+	TRANSACTION_STRUCTURE_FC	VARCHAR(255),
+	TRANSACTION_EXECUTION_MODE_FC	VARCHAR(255),
+	TYPE_OF_PROPERTY_SFDC	VARCHAR(255),
+	PROD_CATEGORY	VARCHAR(255),
+	ORIGINAL_LOAN_TENURE	NUMBER(38,0),
+	LOAN_TENURE_FOR_RAJAT	NUMBER(38,0),
+	REMAINING_TENURE	FLOAT,
+	LOAN_SANCTION_RATE_METHOD	VARCHAR(430),
+	GENDER_LOS	VARCHAR(31501),
+	PROPERTY_AREA_LMS	FLOAT,
+	INCOME_LMS	FLOAT,
+	INSURANCE FLOAT,
+	LOAN_SURAKSHA FLOAT,
+	KOTAK_LIFE_INSURANCE FLOAT,
+	SERVICE_CHARGE_PDD_KOT FLOAT,
+	SHRIRAM_PROPERTY_INSURANCE FLOAT,
+	FUTURE_GENERALI_INSURANCE FLOAT,
+	CHEQUE_BOUNCING_CHARGES FLOAT,
+	CHEQUE_CANCELLATION_CHARGES FLOAT,
+	HDFC_LIFE_INSURANCE_COMPANY_LIMI FLOAT,
+	SERVICE_CHARGE_PDD_HDF FLOAT,
+	CASH_COLLECTION_CHARGES FLOAT,
+	RELIGARE_HEALTH_INSURANCE_CO FLOAT,
+	LEGAL_CASE_FILED_CHARGES FLOAT,
+	COLLECTION_FOLLOW_UP_CHARGES FLOAT,
+	EQUITABLE_MORTGAGE_FEES FLOAT,
+	EXCEPTIONAL_STATEMENT_CHARGES FLOAT,
+	DOCUMENT_COPY_CHARGES FLOAT,
+	SWITCH_FEES FLOAT,
+	BAJAJ_ALLIANZ_LIFE_INSURANCE FLOAT,
+	COMPLETION_CERTIFICATE_CHARGE FLOAT,
+	ICICI_LOMBARD_GIC_LIMITED FLOAT,
+	ROC_CHARGES_CREATION_EXPENSES FLOAT,
+	ICICI_PRUDENTIAL_LIFE_INSURANCE FLOAT,
+	LOAN_CANCELLATION_CHARGES FLOAT,
+	SUBSEQUENT_TRANCHE_VISIT_CHARGE FLOAT,
+	ICICI_LOMBARD_GENERAL_INSURANCE FLOAT,
+	BHARTI_AXA_LIFE_INSURANCE FLOAT,
+	CARE_PROTECTION_PLAN FLOAT,
+	ODV_CHARGES FLOAT,
+	RPDC_COLLECTION_BY_VISIT_TO_CUST FLOAT,
+	SWAPPING_CHARGES FLOAT,
+	BAJAJ_ALLIANZ_GENERAL_INSURANCE FLOAT
+) AS
+SELECT 
+    LOAN_NO_OLD,
+    LOAN_NO,
+    Customer_ID,
+    Customer_Name,
+    Loan_Status,
+    LOAN_AMOUNT,
+    DISBURSAL_AMOUNT,
+    LOAN_AUTHOR_DATE,
+    FIRST_DISBURSAL_DATE,
+    LAST_DISBURSAL_DATE,
+    LOAN_MATURITY_DATE,
+    LOAN_TERMINATION_DATE,
+    Disbursal_Status,
+    -- Charges
+    Processing_Fees,
+    Service_Charge_PDD,
+    Administrative_Fees,
+    LEGAL_CHARGES,
+    VALUATION_CHARGES,
+    Stamping_Charges,
+    Cersai_Registration_Charges,
+    RCU_Charges,
+    INSU_Charges,
+    Charges_Deducted_At_Disbursement,
+    -- GL Accounts
+    Standard_Housing_Loan_drcr,
+    NPA_Housing_Loan_drcr,
+    Standard_Non_Housing_Loan_drcr,
+    NPA_Non_Housing_Loan_drcr,
+    Interest_Receivable_On_Housing_L,
+    Interest_Receivable_on_Non_Housi,
+    Suspended_Interest_Receivable_dr,
+    Interest_Earned_But_Not_Due_On_H,
+    Interest_Earned_But_Not_Due_On_N,
+    Suspended_Interest_Accrued_On_Ho,
+    Suspended_Interest_Accrued_On_No,
+    Sundry_Creditors_LMS_On_Housing,
+    Sundry_Creditors_LMS_On_Non_Hous,
+    Loan_Payable_On_Housing_Loan_drc,
+    Loan_Payable_On_Non_Housing_Loan,
+    Interest_receivable,
+    Interest_accrued,
+    MRR,
+    Total_POS,
+    POS_HL,
+    POS_NHL,
+    Total_For_provision,
+    DPD_EMI_PEMI,
+    Provision,
+    Asset_classification,
+    Asset_status_as_per_old,
+    IRR,
+    LOAN_TENURE,
+    LOAN_RATE_METHOD,
+    FATHER_OR_HUSBAND_NAME,
+    ADDRESS,
+    PRIMARY_PHONE,
+    ALTERNATE_PHONE,
+    Country,
+    STATE,
+    District,
+    TAHSIL,
+    PINCODE,
+    property_full_address,
+    PROPERTY_ASSET_ADDRESS,
+    VILLAGE_NAME_LANDMARK,
+    TAHSIL_PROPERTY,
+    DISTRICT_PROPERTY,
+    State_PROPERTY,
+    PINCODE_asset,
+    PROPERTY_AREA,
+    PROPERTY_OWNER,
+    ASSET_LEVEL,
+    Asset_Collateral_Desc,
+    LOAN_REPAYMENT_MODE,
+    FOIR,
+    LOAN_SECTOR_TYPE,
+    CUSTOMER_CONSTITUTION,
+    CATEGORY,
+    PAN,
+    Customer_PAN_Flag,
+	GENDER AS GENDER_BR ,
+    Gender_lms,
+    CUSTOMER_TYPE,
+    SOURCE_TYPE,
+    BRANCH,
+    hub,
+    branch_state,
+    Product_NHB,
+    product ,
+    scheme ,
+    PENDING_DISBURSAL_AMOUNT1,
+    ASSET_COLLATERAL_VALUE,
+    LTV,
+    EMI_AMOUNT,
+    REPAYMENT_START_DATE,
+    LOAN_ADVANCE_INSTL,
+    DOB,
+    FINANCIAL_MONTH,
+    EMI_billed,
+    LAST_EMI_RECEIVED_DATE,
+    Occupation,
+    POOL_ID,
+    POOL_NAME,
+    AGENCY_NAME,
+    TOTAL_OUTSTANDING,
+    combined_ltv,
+    parent_loan_no,
+    cust_profile_id,
+    CUST_PROFILE_DESC,
+    customer_sub_profile_desc,
+    Pending_disbursment,
+    Restructure_2_0,
+    Additional_Provisioning_Required,
+    Provisioning_release,
+    Asset_classification_Sep_24_New,
+    Asset_classification_Sep_24_Old,
+    Total_POS_Sep_24,
+    DPD_Provision_Sep_24,
+    Difference_DPD,
+    Bheem_DPD,
+    type_of_loan_FC,
+    credit_decision_identifier_FC,
+    property_identifier_FC,
+    end_use_for_msme,
+    transaction_structure_FC,
+    transaction_execution_mode_FC,
+    type_of_property_sfdc,
+    prod_category,
+    original_loan_tenure,
+    loan_tenure_for_rajat,
+    remaining_tenure,
+    loan_sanction_rate_method,
+    gender_los,
+    property_area_lms,
+    income_lms,
+	INSURANCE,
+	LOAN_SURAKSHA,
+	KOTAK_LIFE_INSURANCE,
+	SERVICE_CHARGE_PDD_KOT,
+	SHRIRAM_PROPERTY_INSURANCE,
+	FUTURE_GENERALI_INSURANCE,
+	CHEQUE_BOUNCING_CHARGES,
+	CHEQUE_CANCELLATION_CHARGES,
+	HDFC_LIFE_INSURANCE_COMPANY_LIMI,
+	SERVICE_CHARGE_PDD_HDF,
+	CASH_COLLECTION_CHARGES,
+	RELIGARE_HEALTH_INSURANCE_CO,
+	LEGAL_CASE_FILED_CHARGES,
+	COLLECTION_FOLLOW_UP_CHARGES,
+	EQUITABLE_MORTGAGE_FEES,
+	EXCEPTIONAL_STATEMENT_CHARGES,
+	DOCUMENT_COPY_CHARGES,
+	SWITCH_FEES,
+	BAJAJ_ALLIANZ_LIFE_INSURANCE,
+	COMPLETION_CERTIFICATE_CHARGE,
+	ICICI_LOMBARD_GIC_LIMITED,
+	ROC_CHARGES_CREATION_EXPENSES,
+	ICICI_PRUDENTIAL_LIFE_INSURANCE,
+	LOAN_CANCELLATION_CHARGES,
+	SUBSEQUENT_TRANCHE_VISIT_CHARGE,
+	ICICI_LOMBARD_GENERAL_INSURANCE,
+	BHARTI_AXA_LIFE_INSURANCE,
+	CARE_PROTECTION_PLAN,
+	ODV_CHARGES,
+	RPDC_COLLECTION_BY_VISIT_TO_CUST,
+	SWAPPING_CHARGES,
+	BAJAJ_ALLIANZ_GENERAL_INSURANCE
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.final_f;
+
+-- Count total rows in prefinal table
+    SELECT COUNT(*) INTO :TOTAL_ROWS_IN_PREFINAL
+    FROM DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART_PREFINAL;
+	
+----IF TOTAL ROW COUNT 0 , Return Detailed Error
+	IF (TOTAL_ROWS_IN_PREFINAL = 0) THEN
+		ERROR_MESSAGE := ''PREFINAL QUERY EXECUTED SUCCESSFULLY BUT RETURNED 0 RECORDS. PLEASE VERIFY SOURCE DATA AND JOIN CONDITIONS.'';
+		
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME,REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,:ROWS_INSERTED,:ROWS_UPDATED,:ROWS_UNCHANGED,''FAIL'',:CURR_TIME,CURRENT_TIMESTAMP,:ERROR_MESSAGE;	
+		
+		RETURN ''PREFINAL_FAILED: '' || ERROR_MESSAGE;
+	END IF;
+
+INSERT INTO DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART(
+	LOAN_NO_OLD,
+	LOAN_NO,
+	CUSTOMER_ID,
+	CUSTOMER_NAME,
+	LOAN_STATUS,
+	LOAN_AMOUNT,
+	DISBURSAL_AMOUNT,
+	LOAN_AUTHOR_DATE,
+	FIRST_DISBURSAL_DATE,
+	LAST_DISBURSAL_DATE,
+	LOAN_MATURITY_DATE,
+	LOAN_TERMINATION_DATE,
+	DISBURSAL_STATUS,
+	PROCESSING_FEES,
+	SERVICE_CHARGE_PDD,
+	ADMINISTRATIVE_FEES,
+	LEGAL_CHARGES,
+	VALUATION_CHARGES,
+	STAMPING_CHARGES,
+	CERSAI_REGISTRATION_CHARGES,
+	RCU_CHARGES,
+	INSU_CHARGES,
+	CHARGES_DEDUCTED_AT_DISBURSEMENT,
+	STANDARD_HOUSING_LOAN_DRCR,
+	NPA_HOUSING_LOAN_DRCR,
+	STANDARD_NON_HOUSING_LOAN_DRCR,
+	NPA_NON_HOUSING_LOAN_DRCR,
+	INTEREST_RECEIVABLE_ON_HOUSING_L,
+	INTEREST_RECEIVABLE_ON_NON_HOUSI,
+	SUSPENDED_INTEREST_RECEIVABLE_DR,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_H,
+	INTEREST_EARNED_BUT_NOT_DUE_ON_N,
+	SUSPENDED_INTEREST_ACCRUED_ON_HO,
+	SUSPENDED_INTEREST_ACCRUED_ON_NO,
+	SUNDRY_CREDITORS_LMS_ON_HOUSING,
+	SUNDRY_CREDITORS_LMS_ON_NON_HOUS,
+	LOAN_PAYABLE_ON_HOUSING_LOAN_DRC,
+	LOAN_PAYABLE_ON_NON_HOUSING_LOAN,
+	INTEREST_RECEIVABLE,
+	INTEREST_ACCRUED,
+	MRR,
+	TOTAL_POS,
+	POS_HL,
+	POS_NHL,
+	TOTAL_FOR_PROVISION,
+	DPD_EMI_PEMI,
+	PROVISION,
+	ASSET_CLASSIFICATION,
+	ASSET_STATUS_AS_PER_OLD,
+	IRR,
+	LOAN_TENURE,
+	LOAN_RATE_METHOD,
+	FATHER_OR_HUSBAND_NAME,
+	ADDRESS,
+	PRIMARY_PHONE,
+	ALTERNATE_PHONE,
+	COUNTRY,
+	STATE,
+	DISTRICT,
+	TAHSIL,
+	PINCODE,
+	PROPERTY_FULL_ADDRESS,
+	PROPERTY_ASSET_ADDRESS,
+	VILLAGE_NAME_LANDMARK,
+	TAHSIL_PROPERTY,
+	DISTRICT_PROPERTY,
+	STATE_PROPERTY,
+	PINCODE_ASSET,
+	PROPERTY_AREA,
+	PROPERTY_OWNER,
+	ASSET_LEVEL,
+	ASSET_COLLATERAL_DESC,
+	LOAN_REPAYMENT_MODE,
+	FOIR,
+	LOAN_SECTOR_TYPE,
+	CUSTOMER_CONSTITUTION,
+	CATEGORY,
+	PAN,
+	CUSTOMER_PAN_FLAG,
+	GENDER_BR ,
+	GENDER_LMS,
+	CUSTOMER_TYPE,
+	SOURCE_TYPE,
+	BRANCH,
+	HUB,
+	BRANCH_STATE,
+	PRODUCT_NHB,
+	PRODUCT,
+	SCHEME,
+	PENDING_DISBURSAL_AMOUNT1,
+	ASSET_COLLATERAL_VALUE,
+	LTV,
+	EMI_AMOUNT,
+	REPAYMENT_START_DATE,
+	LOAN_ADVANCE_INSTL,
+	DOB,
+	FINANCIAL_MONTH,
+	EMI_BILLED,
+	LAST_EMI_RECEIVED_DATE,
+	OCCUPATION,
+	POOL_ID,
+	POOL_NAME,
+	AGENCY_NAME,
+	TOTAL_OUTSTANDING,
+	COMBINED_LTV,
+	PARENT_LOAN_NO,
+	CUST_PROFILE_ID,
+	CUST_PROFILE_DESC,
+	CUSTOMER_SUB_PROFILE_DESC,
+	PENDING_DISBURSMENT,
+	RESTRUCTURE_2_0,
+	ADDITIONAL_PROVISIONING_REQUIRED,
+	PROVISIONING_RELEASE,
+	ASSET_CLASSIFICATION_SEP_24_NEW,
+	ASSET_CLASSIFICATION_SEP_24_OLD,
+	TOTAL_POS_SEP_24,
+	DPD_PROVISION_SEP_24,
+	DIFFERENCE_DPD,
+	BHEEM_DPD,
+	TYPE_OF_LOAN_FC,
+	CREDIT_DECISION_IDENTIFIER_FC,
+	PROPERTY_IDENTIFIER_FC,
+	END_USE_FOR_MSME,
+	TRANSACTION_STRUCTURE_FC,
+	TRANSACTION_EXECUTION_MODE_FC,
+	TYPE_OF_PROPERTY_SFDC,
+	PROD_CATEGORY,
+	ORIGINAL_LOAN_TENURE,
+	LOAN_TENURE_FOR_RAJAT,
+	REMAINING_TENURE,
+	LOAN_SANCTION_RATE_METHOD,
+	GENDER_LOS,
+	PROPERTY_AREA_LMS,
+	INCOME_LMS,
+	INSURANCE,
+	LOAN_SURAKSHA,
+	KOTAK_LIFE_INSURANCE,
+	SERVICE_CHARGE_PDD_KOT,
+	SHRIRAM_PROPERTY_INSURANCE,
+	FUTURE_GENERALI_INSURANCE,
+	CHEQUE_BOUNCING_CHARGES,
+	CHEQUE_CANCELLATION_CHARGES,
+	HDFC_LIFE_INSURANCE_COMPANY_LIMI,
+	SERVICE_CHARGE_PDD_HDF,
+	CASH_COLLECTION_CHARGES,
+	RELIGARE_HEALTH_INSURANCE_CO,
+	LEGAL_CASE_FILED_CHARGES,
+	COLLECTION_FOLLOW_UP_CHARGES,
+	EQUITABLE_MORTGAGE_FEES,
+	EXCEPTIONAL_STATEMENT_CHARGES,
+	DOCUMENT_COPY_CHARGES,
+	SWITCH_FEES,
+	BAJAJ_ALLIANZ_LIFE_INSURANCE,
+	COMPLETION_CERTIFICATE_CHARGE,
+	ICICI_LOMBARD_GIC_LIMITED,
+	ROC_CHARGES_CREATION_EXPENSES,
+	ICICI_PRUDENTIAL_LIFE_INSURANCE,
+	LOAN_CANCELLATION_CHARGES,
+	SUBSEQUENT_TRANCHE_VISIT_CHARGE,
+	ICICI_LOMBARD_GENERAL_INSURANCE,
+	BHARTI_AXA_LIFE_INSURANCE,
+	CARE_PROTECTION_PLAN,
+	ODV_CHARGES,
+	RPDC_COLLECTION_BY_VISIT_TO_CUST,
+	SWAPPING_CHARGES,
+	BAJAJ_ALLIANZ_GENERAL_INSURANCE,
+	REPORT_DATE)
+SELECT
+	S.LOAN_NO_OLD,
+	S.LOAN_NO,
+	S.CUSTOMER_ID,
+	S.CUSTOMER_NAME,
+	S.LOAN_STATUS,
+	S.LOAN_AMOUNT,
+	S.DISBURSAL_AMOUNT,
+	S.LOAN_AUTHOR_DATE,
+	S.FIRST_DISBURSAL_DATE,
+	S.LAST_DISBURSAL_DATE,
+	S.LOAN_MATURITY_DATE,
+	S.LOAN_TERMINATION_DATE,
+	S.DISBURSAL_STATUS,
+	S.PROCESSING_FEES,
+	S.SERVICE_CHARGE_PDD,
+	S.ADMINISTRATIVE_FEES,
+	S.LEGAL_CHARGES,
+	S.VALUATION_CHARGES,
+	S.STAMPING_CHARGES,
+	S.CERSAI_REGISTRATION_CHARGES,
+	S.RCU_CHARGES,
+	S.INSU_CHARGES,
+	S.CHARGES_DEDUCTED_AT_DISBURSEMENT,
+	S.STANDARD_HOUSING_LOAN_DRCR,
+	S.NPA_HOUSING_LOAN_DRCR,
+	S.STANDARD_NON_HOUSING_LOAN_DRCR,
+	S.NPA_NON_HOUSING_LOAN_DRCR,
+	S.INTEREST_RECEIVABLE_ON_HOUSING_L,
+	S.INTEREST_RECEIVABLE_ON_NON_HOUSI,
+	S.SUSPENDED_INTEREST_RECEIVABLE_DR,
+	S.INTEREST_EARNED_BUT_NOT_DUE_ON_H,
+	S.INTEREST_EARNED_BUT_NOT_DUE_ON_N,
+	S.SUSPENDED_INTEREST_ACCRUED_ON_HO,
+	S.SUSPENDED_INTEREST_ACCRUED_ON_NO,
+	S.SUNDRY_CREDITORS_LMS_ON_HOUSING,
+	S.SUNDRY_CREDITORS_LMS_ON_NON_HOUS,
+	S.LOAN_PAYABLE_ON_HOUSING_LOAN_DRC,
+	S.LOAN_PAYABLE_ON_NON_HOUSING_LOAN,
+	S.INTEREST_RECEIVABLE,
+	S.INTEREST_ACCRUED,
+	S.MRR,
+	S.TOTAL_POS,
+	S.POS_HL,
+	S.POS_NHL,
+	S.TOTAL_FOR_PROVISION,
+	S.DPD_EMI_PEMI,
+	S.PROVISION,
+	S.ASSET_CLASSIFICATION,
+	S.ASSET_STATUS_AS_PER_OLD,
+	S.IRR,
+	S.LOAN_TENURE,
+	S.LOAN_RATE_METHOD,
+	S.FATHER_OR_HUSBAND_NAME,
+	S.ADDRESS,
+	S.PRIMARY_PHONE,
+	S.ALTERNATE_PHONE,
+	S.COUNTRY,
+	S.STATE,
+	S.DISTRICT,
+	S.TAHSIL,
+	S.PINCODE,
+	S.PROPERTY_FULL_ADDRESS,
+	S.PROPERTY_ASSET_ADDRESS,
+	S.VILLAGE_NAME_LANDMARK,
+	S.TAHSIL_PROPERTY,
+	S.DISTRICT_PROPERTY,
+	S.STATE_PROPERTY,
+	S.PINCODE_ASSET,
+	S.PROPERTY_AREA,
+	S.PROPERTY_OWNER,
+	S.ASSET_LEVEL,
+	S.ASSET_COLLATERAL_DESC,
+	S.LOAN_REPAYMENT_MODE,
+	S.FOIR,
+	S.LOAN_SECTOR_TYPE,
+	S.CUSTOMER_CONSTITUTION,
+	S.CATEGORY,
+	S.PAN,
+	S.CUSTOMER_PAN_FLAG,
+	S.GENDER_BR ,
+	S.GENDER_LMS,
+	S.CUSTOMER_TYPE,
+	S.SOURCE_TYPE,
+	S.BRANCH,
+	S.HUB,
+	S.BRANCH_STATE,
+	S.PRODUCT_NHB,
+	S.PRODUCT,
+	S.SCHEME,
+	S.PENDING_DISBURSAL_AMOUNT1,
+	S.ASSET_COLLATERAL_VALUE,
+	S.LTV,
+	S.EMI_AMOUNT,
+	S.REPAYMENT_START_DATE,
+	S.LOAN_ADVANCE_INSTL,
+	S.DOB,
+	S.FINANCIAL_MONTH,
+	S.EMI_BILLED,
+	S.LAST_EMI_RECEIVED_DATE,
+	S.OCCUPATION,
+	S.POOL_ID,
+	S.POOL_NAME,
+	S.AGENCY_NAME,
+	S.TOTAL_OUTSTANDING,
+	S.COMBINED_LTV,
+	S.PARENT_LOAN_NO,
+	S.CUST_PROFILE_ID,
+	S.CUST_PROFILE_DESC,
+	S.CUSTOMER_SUB_PROFILE_DESC,
+	S.PENDING_DISBURSMENT,
+	S.RESTRUCTURE_2_0,
+	S.ADDITIONAL_PROVISIONING_REQUIRED,
+	S.PROVISIONING_RELEASE,
+	S.ASSET_CLASSIFICATION_SEP_24_NEW,
+	S.ASSET_CLASSIFICATION_SEP_24_OLD,
+	S.TOTAL_POS_SEP_24,
+	S.DPD_PROVISION_SEP_24,
+	S.DIFFERENCE_DPD,
+	S.BHEEM_DPD,
+	S.TYPE_OF_LOAN_FC,
+	S.CREDIT_DECISION_IDENTIFIER_FC,
+	S.PROPERTY_IDENTIFIER_FC,
+	S.END_USE_FOR_MSME,
+	S.TRANSACTION_STRUCTURE_FC,
+	S.TRANSACTION_EXECUTION_MODE_FC,
+	S.TYPE_OF_PROPERTY_SFDC,
+	S.PROD_CATEGORY,
+	S.ORIGINAL_LOAN_TENURE,
+	S.LOAN_TENURE_FOR_RAJAT,
+	S.REMAINING_TENURE,
+	S.LOAN_SANCTION_RATE_METHOD,
+	S.GENDER_LOS,
+	S.PROPERTY_AREA_LMS,
+	S.INCOME_LMS,
+	S.INSURANCE,
+	S.LOAN_SURAKSHA,
+	S.KOTAK_LIFE_INSURANCE,
+	S.SERVICE_CHARGE_PDD_KOT,
+	S.SHRIRAM_PROPERTY_INSURANCE,
+	S.FUTURE_GENERALI_INSURANCE,
+	S.CHEQUE_BOUNCING_CHARGES,
+	S.CHEQUE_CANCELLATION_CHARGES,
+	S.HDFC_LIFE_INSURANCE_COMPANY_LIMI,
+	S.SERVICE_CHARGE_PDD_HDF,
+	S.CASH_COLLECTION_CHARGES,
+	S.RELIGARE_HEALTH_INSURANCE_CO,
+	S.LEGAL_CASE_FILED_CHARGES,
+	S.COLLECTION_FOLLOW_UP_CHARGES,
+	S.EQUITABLE_MORTGAGE_FEES,
+	S.EXCEPTIONAL_STATEMENT_CHARGES,
+	S.DOCUMENT_COPY_CHARGES,
+	S.SWITCH_FEES,
+	S.BAJAJ_ALLIANZ_LIFE_INSURANCE,
+	S.COMPLETION_CERTIFICATE_CHARGE,
+	S.ICICI_LOMBARD_GIC_LIMITED,
+	S.ROC_CHARGES_CREATION_EXPENSES,
+	S.ICICI_PRUDENTIAL_LIFE_INSURANCE,
+	S.LOAN_CANCELLATION_CHARGES,
+	S.SUBSEQUENT_TRANCHE_VISIT_CHARGE,
+	S.ICICI_LOMBARD_GENERAL_INSURANCE,
+	S.BHARTI_AXA_LIFE_INSURANCE,
+	S.CARE_PROTECTION_PLAN,
+	S.ODV_CHARGES,
+	S.RPDC_COLLECTION_BY_VISIT_TO_CUST,
+	S.SWAPPING_CHARGES,
+	S.BAJAJ_ALLIANZ_GENERAL_INSURANCE,
+	LAST_DAY(:START_DATE)
+	FROM DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART_PREFINAL S;
+
+		        -- Count rows affected
+         ROWS_INSERTED := (SELECT COUNT(*) FROM DISHA_MART_ANALYTICS.REGULATORY_MART.LOAN_DUMP_MART WHERE REPORT_DATE=LAST_DAY(:START_DATE));
+         ROWS_UPDATED := 0;
+         ROWS_UNCHANGED := :TOTAL_ROWS_IN_PREFINAL - (:ROWS_INSERTED + :ROWS_UPDATED);
+		 
+		 
+		 	        -- Prepare detailed output
+          SELECT CONCAT(
+            ''===== DATA LOADING REPORT =====
+'',
+            ''Process Timestamp: '', :CURR_TIME, ''
+'',
+            ''Total Rows in Prefinal: '', :TOTAL_ROWS_IN_PREFINAL, ''
+'',
+            ''Rows Inserted: '', :ROWS_INSERTED, ''
+'',
+            ''Rows Updated: '', :ROWS_UPDATED, ''
+'',
+            ''Rows Unchanged: '', :ROWS_UNCHANGED, ''
+
+'',
+            ''
+
+'',
+            ''Status: SUCCESSFULLY LOADED DATA INTO LOAN_DUMP_MART''
+        ) INTO :FINAL_OUTPUT;
+		--INSERT AUDIT INFO INTO TABLE
+		/*DELETE FROM DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON 
+		WHERE  PROCEDURE_NAME=:PROC_NAME
+		AND	   EXECUTION_DATE=DATE(:CURR_TIME);*/
+		
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME,REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,:ROWS_INSERTED,:ROWS_UPDATED,:ROWS_UNCHANGED,''PASS'',:CURR_TIME,CURRENT_TIMESTAMP,:FINAL_OUTPUT;
+		
+	 RETURN FINAL_OUTPUT;
+	
+	EXCEPTION
+        WHEN OTHER THEN
+            ERROR_MESSAGE := ''ERROR IN SCD TYPE2 LOAD: '' || SQLERRM || '' (ERROR CODE: '' || sqlcode || '')'';
+                        
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME,REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,:ROWS_INSERTED,:ROWS_UPDATED,:ROWS_UNCHANGED,''FAIL'',:CURR_TIME,CURRENT_TIMESTAMP,:ERROR_MESSAGE;	
+		
+		RETURN ''DATA LOADING FAILED, '' || ERROR_MESSAGE;
+
+END';
