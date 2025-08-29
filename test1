@@ -1,0 +1,370 @@
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd AS
+SELECT * FROM
+DISHA_L2_CURATED.HISTORICAL_LOAD.COLL_DUELIST where TRY_TO_DATE(EXTRACTED_DATE, 'YYYY-MM-DD') = '2024-08-02';
+
+
+
+
+
+CREATE  OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd_with_bd AS
+SELECT 
+    *,
+    TRY_TO_DATE(EXTRACTED_DATE, 'YYYY-MM-DD') - 1 AS BUSINESS_DATE -- 09-09-2024
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd;
+
+
+CREATE  OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.business_with_prev_month_end AS
+SELECT
+    *,
+	DATE_TRUNC('MONTH', BUSINESS_DATE) AS MONTH_START_DATE
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd_with_bd;
+
+
+
+
+
+
+CREATE  OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.dpd_lookup AS
+SELECT
+    LOAN_NO,
+    BUSINESS_DATE AS DPD_DATE,
+    DPD AS DPD_FOR_DATE
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd_with_bd;
+
+
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.ld AS
+SELECT
+    a.LOAN_NO,
+    a.EXTRACTED_DATE,
+    a.BUSINESS_DATE,
+    a.DPD,
+    a.MONTH_START_DATE,
+    b.DPD AS OP_DPD
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.business_with_prev_month_end a
+--LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.dpd_lookup b
+LEFT JOIN (select loan_no, DPD, EXTRACTED_DATE from DISHA_L2_CURATED.HISTORICAL_LOAD.COLL_DUELIST 
+where EXTRACTED_DATE = DATE_TRUNC('MONTH',TO_DATE('2024-08-02')))  b
+     ON a.LOAN_NO = b.LOAN_NO AND a.MONTH_START_DATE = b.EXTRACTED_DATE;
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.lad_deduped AS (
+  SELECT *
+  FROM (
+    SELECT *
+    FROM DISHA_L2_CURATED.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS
+    WHERE activation_flag = 1
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY loan_no ORDER BY dat_start DESC) = 1
+  )
+);
+
+-- Step 2: Join temp_deduped_cd with the deduped LAD table
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.cust_loan_check AS
+SELECT 
+  lad.CUST_ID_FLEX,
+  cd.LOAN_NO,
+  COUNT(DISTINCT cd.LOAN_NO) AS loan_count
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd
+LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.lad_deduped lad 
+  ON TRIM(CAST(cd.LOAN_NO AS VARCHAR)) = TRIM(lad.LOAN_NO)
+GROUP BY lad.CUST_ID_FLEX, cd.LOAN_NO;
+
+
+
+
+
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.npa_check AS  
+SELECT 
+    lad.CUST_ID_FLEX,
+    MIN(CAST(cd.LOAN_NO AS VARCHAR)) AS LOAN_NO,  -- Choose one representative loan
+    MAX(CASE WHEN cd.DPD >= 91 THEN 1 ELSE 0 END) AS IS_NPA_CUST,
+    MAX(CASE WHEN cd.DPD = 0 THEN 1 ELSE 0 END) AS HAS_ZERO_DPD,
+    CASE 
+        WHEN MAX(CASE WHEN cd.DPD >= 91 THEN 1 ELSE 0 END) = 1 
+             AND MAX(CASE WHEN cd.DPD = 0 THEN 1 ELSE 0 END) = 1 THEN 'linked loan NPA'
+        WHEN MAX(CASE WHEN cd.DPD >= 91 THEN 1 ELSE 0 END) = 1 THEN 'NPA'
+        ELSE 'NORMAL'
+    END AS CUST_TAG_STATUS
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd
+LEFT JOIN DISHA_L2_CURATED.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS lad 
+    ON TRIM(CAST(cd.LOAN_NO AS VARCHAR)) = TRIM(lad.LOAN_NO)
+WHERE cd.EXTRACTED_DATE = LAST_DAY(TRY_TO_DATE(EXTRACTED_DATE, 'YYYY-MM-DD')) 
+  AND lad.activation_flag = 1 
+GROUP BY lad.CUST_ID_FLEX;
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.ro_check AS 
+select 
+lam.loan_no,
+lam.employee_code,
+SHM.*
+from
+( select * from DISHA_MART_ANALYTICS.SALES_CREDIT_MART.loan_application_mart where activation_flag = 1 ) lam left join
+(SELECT * FROM DISHA_MART_ANALYTICS.SALES_CREDIT_MART.SALES_HIERARCHY_MART ) SHM ON 
+TRIM(lam.employee_code)=TRIM(SHM.EMPLOYEE_ID) AND ((lam.DEAL_FORWARD_DATE > SHM.START_TIMESTAMP AND lam.DEAL_FORWARD_DATE  < SHM.END_TIMESTAMP) 
+OR (lam.DEAL_FORWARD_DATE  > SHM.START_TIMESTAMP AND SHM.END_TIMESTAMP IS NULL));
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.credit_hierarchy AS
+select 
+lam.loan_no,
+lam.employee_code,
+coalesce(kch.acm_id,kch1.acm_id) as acm_id,
+coalesce(kch.acm_name,kch1.acm_name) as acm_name,
+coalesce(kch.scm_id,kch1.scm_id) as scm_id,
+coalesce(kch.scm_name,kch1.scm_name) as scm_name,
+coalesce(kch.zcm_id,kch1.zcm_id) as zcm_id,
+coalesce(kch.zcm_name,kch1.zcm_name) as zcm_name,
+coalesce(kch.zch_id,kch1.zch_id) as zch_id,
+coalesce(kch.zch_name,kch1.zch_name) as zch_name,
+coalesce(kch.nch_id,kch1.nch_id) as nch_id,
+coalesce(kch.nch_name,kch1.nch_name) as nch_name		 
+ from 
+ (select * from DISHA_MART_ANALYTICS.SALES_CREDIT_MART.loan_application_mart where activation_flag=1 ) lam
+  LEFT JOIN DISHA_MART_ANALYTICS.SALES_CREDIT_MART.KYVOS_CREDIT_HIER  kch on kch.loan_application_name_s=lam.loan_application_name and 
+kch.deal_id =lam.loan_application_no and kch.source_d<>'SFDC' AND lam.DATA_SOURCE<>'SFDC' 
+LEFT JOIN DISHA_MART_ANALYTICS.SALES_CREDIT_MART.KYVOS_CREDIT_HIER  kch1 on kch1.loan_application_name_s=lam.loan_application_name 
+and kch1.source_d='SFDC' AND lam.DATA_SOURCE='SFDC'  ;
+
+
+
+
+
+ CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.max_pending_emi_per_cust AS 
+					SELECT 
+						lad.CUST_ID_FLEX,
+						cd.loan_no,
+						MAX(cd.TOTAL_NO_OF_INSTL - cd.TOTAL_BILLED_INSTL_NO) AS NET_LTV
+						FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd
+						LEFT JOIN DISHA_L2_CURATED.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS lad 
+						ON TRIM(CAST(cd.LOAN_NO AS VARCHAR)) = TRIM(lad.LOAN_NO)
+				--	WHERE TRY_TO_DATE(cd.EXTRACTED_DATE, 'YYYY-MM-DD') >= '2025-02-27' AND TRY_TO_DATE(cd.EXTRACTED_DATE, 'YYYY-MM-DD') <= '2025-03-31'
+					GROUP BY lad.CUST_ID_FLEX , cd.loan_no;
+
+
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.customers_with_mixed_dpd AS
+SELECT 
+  lad.CUST_ID_FLEX AS CUSTOMER_CODE
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.ld dpd
+JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd ON dpd.LOAN_NO = cd.LOAN_NO
+LEFT JOIN DISHA_L2_CURATED.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS lad 
+  ON TRIM(CAST(cd.LOAN_NO AS VARCHAR)) = TRIM(lad.LOAN_NO) and lad.activation_flag = 1
+WHERE lad.CUST_ID_FLEX IS NOT NULL
+GROUP BY lad.CUST_ID_FLEX
+HAVING 
+  MAX(CASE WHEN dpd.DPD > 0 THEN 1 ELSE 0 END) = 1 AND  MAX(CASE WHEN dpd.DPD = 0 THEN 1 ELSE 0 END) = 1;
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.current_status_cte AS 
+  SELECT 
+    cd.LOAN_NO,
+    cd.DPD,
+    cd.CHEQUE_IN_TRANSIT_COUNT,
+    ld.OP_DPD,
+	cd.EXTRACTED_DATE,
+--	ld.BUSINESS_DATE,
+    -- Compute CURRENT_STATUS
+    CASE 
+      WHEN ld.OP_DPD >= 91 AND cd.DPD < 91 AND cd.DPD > 0 THEN 'RTD'
+      WHEN cd.DPD = 0 THEN 'NORMAL'
+      WHEN cd.DPD = ld.OP_DPD THEN 'STABLE'
+      WHEN cd.DPD < ld.OP_DPD THEN 'ROLLBACK'
+      ELSE 'ROLLFORWARD'
+    END AS CURRENT_STATUS
+  FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd
+LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.ld ld ON cd.LOAN_NO = ld.LOAN_NO and cd.EXTRACTED_DATE = ld.EXTRACTED_DATE;
+
+
+
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.max_extract_date_per_month AS 
+    SELECT *
+    FROM (
+        SELECT *,
+               DATE_TRUNC('MONTH', TO_DATE(extract_date, 'DD-MM-YYYY')) AS month_start,
+               ROW_NUMBER() OVER (
+                   PARTITION BY NEW_LOAN_NO, DATE_TRUNC('MONTH', TO_DATE(extract_date, 'DD-MM-YYYY'))
+                   ORDER BY TO_DATE(extract_date, 'DD-MM-YYYY') DESC
+               ) AS rn
+        FROM DISHA_L2_CURATED.BASE_HARDCODE.coll_hierarchy
+    )
+    WHERE rn = 1;
+
+
+SELECT 
+			TRIM(CAST(cd.LOAN_NO AS VARCHAR)),
+			lad.loan_sanction_amount,
+            loan_bkt.bucket_values,			
+			TRIM(lad.CUST_ID_FLEX),
+			cd.MORATORIUM,
+			cd.CHEQUE_IN_TRANSIT_AMT,
+			cd.CHEQUE_IN_TRANSIT_COUNT,
+			cd.OVERDUE_PRIN,
+			cd.OVERDUE_INTEREST,
+			cd.TOTAL_DUE,
+			(cd.TOTAL_NO_OF_INSTL - cd.TOTAL_BILLED_INSTL_NO) AS REMAINING_TENURE,
+			(cd.LPP + cd.CBC_DUE + cd.OTHER_CHARGES_DUE) AS PENAL_AMOUNT_OUTSTANDING,
+			CASE WHEN LAD.MAXIMUM_DPD > 90  THEN 1 ELSE 0 END as NPA_LOAN,
+			CASE WHEN AFS_OMNI.LOAN_NO IS NOT NULL THEN 1 ELSE 0 END AS AFS_LOAN,
+			CASE WHEN ENCORE_OMNI.LOAN_NO IS NOT NULL THEN 1 ELSE 0 END AS ENCORE_LOAN,
+			CASE WHEN TRIM(LAD.LOAN_STATUS)='10' THEN 1 ELSE 0 END AS WRITEOFF_LOAN,
+			ld.OP_DPD AS OP_DPD,
+			CASE 
+			  WHEN ld.OP_DPD = 0 THEN 'A:0-0'
+			  WHEN ld.OP_DPD >= 1 AND ld.OP_DPD <= 30 THEN 'B:1-30'
+			  WHEN ld.OP_DPD >= 31 AND ld.OP_DPD <= 60 THEN 'C:31-60'
+			  WHEN ld.OP_DPD >= 61 AND ld.OP_DPD <= 90 THEN 'D:61-90'
+			  WHEN ld.OP_DPD >= 91 AND ld.OP_DPD <= 120 THEN 'E:91-120'
+			  WHEN ld.OP_DPD >= 121 AND ld.OP_DPD <= 180 THEN 'F:121-180'
+			  WHEN ld.OP_DPD > 180 THEN 'G:180'
+			END AS COLLX_BKT,
+			CASE 
+				WHEN cd.TOTAL_POS <= 700000 then 'STS'
+				WHEN cd.TOTAL_POS > 700001 AND cd.TOTAL_POS <= 1500000 then 'MTS'
+				WHEN cd.TOTAL_POS > 1500001 AND cd.TOTAL_POS <= 2500000 then 'HTS'
+			ELSE 'SHTS' 
+			END AS TICKET,	
+			CASE 
+			  WHEN ld.OP_DPD != 0 THEN 'Opening Allocation'
+			  WHEN ld.OP_DPD = 0 AND DAY(TRY_TO_DATE(cd.LAST_EMI_DATE, 'YYYY-MM-DD')) = 5 THEN '5th Cycle'
+			  WHEN ld.OP_DPD = 0 AND DAY(TRY_TO_DATE(cd.LAST_EMI_DATE, 'YYYY-MM-DD')) = 10 THEN '10th Cycle'
+			  WHEN ld.OP_DPD = 0 AND DAY(TRY_TO_DATE(cd.LAST_EMI_DATE, 'YYYY-MM-DD')) = 15 THEN '15th Cycle'
+			  ELSE 'NA'
+			END AS Cycle,
+			CASE 
+				WHEN cd.DPD = 0 THEN 'A:0-0'
+				WHEN cd.DPD >= 1 AND  	cd.DPD <= 30 THEN 'B:1-30'
+				WHEN cd.DPD >= 31 AND 	cd.DPD <= 60 THEN 'C:31-60'
+				WHEN cd.DPD >= 61 AND 	cd.DPD <= 90 THEN 'D:61-90'
+				WHEN cd.DPD >= 91 AND 	cd.DPD <= 120 THEN 'E:91-120'
+				WHEN cd.DPD >= 121 AND cd.DPD <= 180 THEN 'F:121-180'
+				WHEN cd.DPD > 180 THEN 'G:180'		
+			END AS CURRENT_DPD_SCALE,
+			CASE 
+			  WHEN AFS_LOAN = 1 THEN 'AFS'
+			  WHEN npa_check.CUST_TAG_STATUS = 'linked loan NPA' THEN 'linked loan NPA'
+			  WHEN npa_check.CUST_TAG_STATUS = 'NPA' THEN 'NPA'
+			  WHEN AFS_LOAN = 1 AND npa_check.CUST_TAG_STATUS = 'NPA' THEN 'NPA AFS'
+			  WHEN (AFS_LOAN = 1 OR npa_check.CUST_TAG_STATUS = 'NPA' OR npa_check.CUST_TAG_STATUS = 'linked loan NPA' ) AND cd.DPD = 0 THEN 'OUT OF NPA'
+			END AS OP_DPD_SCALE,
+			cs.CURRENT_STATUS,
+			CASE WHEN cs.CURRENT_STATUS = 'ROLLFORWARD' and TRY_TO_NUMBER(cd.CHEQUE_IN_TRANSIT_COUNT) <> 0 then 'Cheque in transit'
+			ELSE cs.CURRENT_STATUS END as STATUS,
+			CASE WHEN STATUS IN ('ROLLFORWARD','Cheque in transit') then 'Unpaid'
+			ELSE 'Paid' END AS PAID_STATUS,
+			DATEADD(DAY,-1,TRY_TO_DATE(cd.EXTRACTED_DATE, 'YYYY-MM-DD')) AS BUSINESS_DATE,
+			CASE 
+			  WHEN DAY(TRY_TO_DATE(cd.LAST_EMI_DATE,'YYYY-MM-DD')) = 5 THEN 5 
+			  WHEN DAY(TRY_TO_DATE(cd.LAST_EMI_DATE,'YYYY-MM-DD')) = 10 THEN 10 
+			  WHEN DAY(TRY_TO_DATE(cd.LAST_EMI_DATE,'YYYY-MM-DD')) = 15 THEN 15 
+			END AS CYCLE_DATE,
+			CASE 
+			WHEN laae.POOL_NAME IS NULL then 'ON-BOOK'
+			WHEN laae.POOL_NAME like '%PTC%' then 'PTC'
+			ELSE 'OFF-BOOK'
+			END AS ON_OFF_BOOK,
+   			lac.repayment_mode__c AS INSTALLMENT_MODE, 
+			lad.LOAN_SANCTION_DATE,
+			max_pending_emi_per_cust.NET_LTV AS NET_LTV,
+			(cd.TOTAL_DUE + cd.PRE_EMI) AS EMI_OVERDUE_AMOUNT,			
+			SHM.BUSINESS_STATE,
+			CASE 
+				WHEN UPPER(SHM.BUSINESS_STATE) LIKE  ('%APF%') THEN
+					CASE 
+						WHEN UPPER(SHM.GEO_STATE)='MAHARASHTRA' THEN 'AFFORDABLE' 
+						ELSE 'RETAIL' 
+					END
+				WHEN  UPPER(SHM.BUSINESS_STATE) LIKE ANY ('%AFFO%','%HIG%') THEN 'AFFORDABLE' 
+				WHEN  UPPER(SHM.BUSINESS_STATE) LIKE ANY('%AFFL%','%CORE%') THEN  'CORE PLUS'
+				WHEN UPPER(SHM.BUSINESS_STATE) LIKE ('%MSME%') OR UPPER(SHM.BUSINESS_BRANCH) LIKE ANY('%A+%','%CS','%AAVAS+%') THEN 'MSME'
+			ELSE 'RETAIL' END AS VERTICAL,			
+			CASE 
+				WHEN VERTICAL like 'AFFORDABLE' OR  (VERTICAL like 'MSME' and TICKET like 'STS') then 'AFFORDABLE & MSME' 
+				WHEN COLLX_BKT like 'A:0-0' then 'FLOW'
+				WHEN COLLX_BKT like 'B:1-30' OR COLLX_BKT like 'C:31-60' OR COLLX_BKT like 'D:61-90' then 'GCL'
+			ELSE 'NPL' END AS BUCKET_HEAD,	
+			cd.LAST_RECEIPT_AMOUNT,
+			cd.LAST_RECEIVED_DATE_KNOCKOFF_DATE,
+            bd.branch_lms_code AS BRANCH_ID,
+            cd.loan_branch AS BRANCH_NAME,
+			cd.state AS BRANCH_STATE,
+            datediff('MONTH',bd.date_of_opening,current_Date) BRANCH_VINTAGE_MONTHS,
+            branch_bkt.bucket_values AS BRANCH_VINTAGE_BUCKET, 				
+			LAAD.COD_PROD AS PRODUCT_ID,
+			pm.PRODUCT_CATEGORY AS PRODUCT_CATEGORY,
+			pm.product_name AS PRODUCT_NAME,
+			--ch.EMP_ID,
+			--ch.COLLECTION_RESPONSIBILITY,
+			--ch.TL_EMP_ID,
+			--ch.TL,
+			--ch.ACM_EMP_ID,
+			--ch.ACM,
+			--ch.SH_EMP_ID,
+			--ch.SH_NPL,
+			--ch.ZH_EMP_ID,
+			--ch.COLL_ZH,
+			--ch.AFFORDABLE_ACM_EMP_ID,
+			--ch.AFFORDABLE_ACM,
+			--ch.NH_EMP_ID,
+			--ch.NH,
+			--ch.BH_EMP_ID,
+			--ch.BH, 
+			--ro_check.EMPLOYEE_ID,
+			--ro_check.EMPLOYEE_NAME,
+			--ro_check.BSM_ID,
+			--ro_check.BSM_NAME,
+			--ro_check.PM_ID,
+			--ro_check.PM_NAME,
+			--ro_check.BH_ID,
+			--ro_check.BH_NAME,
+			--ro_check.SH_ID,
+			--ro_check.SH_NAME,
+			--ro_check.ZH_ID,
+			--ro_check.ZH_NAME,
+			--ro_check.NSM_ID,
+			--ro_check.NSM_NAME,
+			--ro_check.VH_ID,
+			--ro_check.VH_NAME,
+			--ro_check.BSH_ID,
+			--ro_check.BSH_NAME,
+			--chm.acm_id,
+			--chm.acm_name,
+			--chm.scm_id,
+			--chm.scm_name,
+			--chm.zcm_id,
+			--chm.zcm_name,
+			--chm.zch_id,
+			--chm.zch_name,
+			--chm.nch_id,
+			--chm.nch_name,
+			ch.Extract_Date
+             FROM DISHA_MART_ANALYTICS.COLLECTION_MART.temp_deduped_cd cd
+		LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.npa_check ON TRIM(cd.LOAN_NO) = TRIM(npa_check.LOAN_NO)
+        LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.ld ld ON TRIM(cd.LOAN_NO) = TRIM(ld.LOAN_NO) and cd.EXTRACTED_DATE = ld.EXTRACTED_DATE
+		LEFT JOIN (select distinct loan_no from DISHA_L2_CURATED.HISTORICAL_LOAD.AFS_SINCE_APR16) AFS_OMNI ON TRIM(cd.LOAN_NO)=TRIM(AFS_OMNI.LOAN_NO)
+    	LEFT JOIN (select distinct loan_no from DISHA_L2_CURATED.HISTORICAL_LOAD.ENCORE_DATA) ENCORE_OMNI ON TRIM(cd.LOAN_NO)=TRIM(ENCORE_OMNI.LOAN_NO)
+        LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.current_status_cte cs ON cd.LOAN_NO = cs.LOAN_NO	AND cd.EXTRACTED_DATE = cs.EXTRACTED_DATE
+     	LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.ro_check ro_check ON TRIM(cd.LOAN_NO) = TRIM(ro_check.loan_no)  
+        LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.credit_hierarchy chm ON TRIM(cd.LOAN_NO) = TRIM(chm.LOAN_NO)
+        LEFT JOIN (select * from DISHA_L1_HARMONIZED.FLEX_LMS.LN_ACCT_ATTRIBUTES_EXT where activation_flag = 1) laae ON TRIM(cd.LOAN_NO) = TRIM(laae.COD_ACCT_NO) 
+		LEFT JOIN (select * from DISHA_L1_HARMONIZED.FLEX_LMS.LN_ACCT_DTLS where activation_flag = 1 ) laad ON TRIM(cd.LOAN_NO) = TRIM(laad.cod_acct_no) 
+		LEFT JOIN (select * from DISHA_L1_HARMONIZED.SFDC_LOS.loan_application__c where activation_flag = 1 ) lac ON TRIM(cd.LOAN_NO) = TRIM(lac.loan_application_id__c)
+		LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.max_extract_date_per_month ch ON 
+		TRIM(cd.LOAN_NO) = TRIM(ch.NEW_LOAN_NO) AND DATE_TRUNC('MONTH', DATEADD(DAY, -1, TRY_TO_DATE(cd.EXTRACTED_DATE, 'YYYY-MM-DD'))) =  ch.month_start
+		LEFT JOIN (SELECT * FROM DISHA_MART_ANALYTICS.SALES_CREDIT_MART.SALES_HIERARCHY_MART where CURRENT_FLAG = 'TRUE'  ) SHM ON 
+		TRIM(ro_check.employee_code)=TRIM(SHM.EMPLOYEE_ID) 		
+		LEFT JOIN (select * from DISHA_L2_CURATED.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS where activation_flag = 1 ) lad 
+        ON TRIM(CAST(cd.LOAN_NO AS VARCHAR)) = TRIM(lad.LOAN_NO)
+        LEFT JOIN disha_l2_curated.base_hardcode.Config_File_Bucketing AS loan_bkt 
+        ON lad.loan_sanction_amount IS NOT NULL  AND loan_bkt.bucket_name = 'Sanction_Amount_Bkt' AND  
+        ((lad.loan_sanction_amount/100000  >= loan_bkt.start_value AND lad.loan_sanction_amount/100000 < loan_bkt.end_value) OR (lad.loan_sanction_amount/100000>= loan_bkt.start_value AND loan_bkt.end_value IS NULL) )  
+        LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.cust_loan_check cust_loan_check ON TRIM(cd.loan_no) = TRIM(cust_loan_check.loan_no)
+        LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.max_pending_emi_per_cust  max_pending_emi_per_cust ON TRIM(cd.loan_no) = TRIM(max_pending_emi_per_cust.loan_no)
+		LEFT  join (select *  from DISHA_L2_CURATED.BASE_MODEL_DATA.BRANCH_DETAILS  where activation_flag = 1) bd ON laad.cod_cc_brn = bd.branch_lms_code
+        LEFT JOIN disha_l2_curated.base_hardcode.Config_File_Bucketing branch_bkt  
+        ON branch_bkt.bucket_name = 'Branch_Vintage_Bkt' 
+        AND  ( ( datediff('MONTH',date_of_opening,current_Date)  >= branch_bkt.start_value AND datediff('MONTH',date_of_opening,current_Date)  < branch_bkt.end_value) 
+        OR (datediff('MONTH',date_of_opening,current_Date) >= branch_bkt.start_value AND branch_bkt.end_value IS NULL ))
+		LEFT join (select * from DISHA_L2_CURATED.BASE_MODEL_DATA.PRODUCT_MASTER ) pm ON laad.cod_prod = pm.PRODUCT_ID  ;
