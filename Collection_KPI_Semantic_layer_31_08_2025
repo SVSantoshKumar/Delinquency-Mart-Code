@@ -1,0 +1,390 @@
+create or replace TEMPORARY table  DISHA_MART_ANALYTICS.COLLECTION_MART.loan_pos_summary  AS
+    SELECT 
+        TRIM(loan_no) AS loan_no,
+        SUM(total_pos) AS total_pos_amt
+    FROM DISHA_L2_CURATED.HISTORICAL_LOAD.COLL_DUELIST
+    WHERE extracted_date = '2024-09-10'
+    GROUP BY TRIM(loan_no);
+
+
+create or replace TEMPORARY table  DISHA_MART_ANALYTICS.COLLECTION_MART.bounce_summary AS
+SELECT 
+        loan_no,
+        COUNT(*) AS bounce_count
+    FROM DISHA_MART_ANALYTICS.COLLECTION_MART.COLLECTION_BOUNCE
+    WHERE UPPER(GROSS_STATUS) = 'BOUNCEDtotal_pos'
+    GROUP BY loan_no;
+
+
+
+
+SELECT 
+    '2024-09-10' AS actual_date,
+	a.BRANCH_NAME AS BRANCH,
+	a.BRANCH_STATE AS BRANCH_STATE,
+	a.PRODUCT_NAME AS PRODUCT_NAME,
+	a.PRODUCT_CATEGORY AS PRODUCT_BIFURCATION,
+	a.VERTICAL AS VERTICAL,
+	CONCAT(a.COLLECTION_AGENT_EMP_ID,' ',a.COLLECTION_RESPONSIBILITY) AS COLL_AGENT,
+	CONCAT(a.COLL_TL_EMP_ID,' ',a.COLL_TL) AS COLL_TL,
+	CONCAT(a.COLL_ACM_EMP_ID,' ',a.COLL_ACM) AS COLL_ACM,
+	CONCAT(a.COLL_SH_EMP_ID,' ',a.COLL_SH_NPL) AS COLL_SH,
+	CONCAT(a.COLL_ZH_EMP_ID,' ',a.COLL_COLL_ZH) AS COLL_ZH,
+	CONCAT(a.COLL_AFFORDABLE_ACM_EMP_ID,' ',a.COLL_AFFORDABLE_ACM) AS COLL_AFFORDABLE_ACM,
+	CONCAT(a.COLL_NH_EMP_ID,' ',a.COLL_NH) AS COLL_NH,
+	CONCAT(a.COLL_BH_EMP_ID,' ',a.COLL_BH) AS COLL_NH,
+	CONCAT(a.SALES_EMPLOYEE_ID,' ',a.SALES_EMPLOYEE_NAME) AS SALES_EMP_NAME,
+	CONCAT(a.SALES_BSM_ID,' ',a.SALES_BSM_NAME) AS SALES_BSM_NAME,
+	CONCAT(a.SALES_PM_ID,' ',a.SALES_PM_NAME) AS SALES_PM_NAME,
+	CONCAT(a.SALES_BH_ID,' ',a.SALES_BH_NAME) AS SALES_BH_NAME,
+	CONCAT(a.SALES_SH_ID,' ',a.SALES_SH_NAME) AS SALES_SH_NAME,
+	CONCAT(a.SALES_ZH_ID,' ',a.SALES_ZH_NAME) AS SALES_ZH_NAME,
+	CONCAT(a.SALES_NSM_ID,' ',a.SALES_NSM_NAME) AS SALES_NSM_NAME,
+	CONCAT(a.SALES_VH_ID,' ',a.SALES_VH_NAME) AS SALES_VH_NAME,
+	CONCAT(a.SALES_BSH_ID,' ',a.SALES_BSH_NAME) AS SALES_BSH_NAME,
+	CONCAT(a.CREDIT_ACM_ID,' ',a.CREDIT_ACM_NAME) AS CREDIT_ACM_NAME,
+	CONCAT(a.CREDIT_SCM_ID,' ',a.CREDIT_SCM_NAME) AS CREDIT_SCM_NAME,
+	CONCAT(a.CREDIT_ZCM_ID,' ',a.CREDIT_ZCM_NAME) AS CREDIT_ZCM_NAME,
+	CONCAT(a.CREDIT_ZCH_ID,' ',a.CREDIT_ZCH_NAME) AS CREDIT_ZCH_NAME,
+	CONCAT(a.CREDIT_NCH_ID,' ',a.CREDIT_NCH_NAME) AS CREDIT_NCH_NAME,
+	a.TICKET AS TICKET,
+    COUNT(DISTINCT a.loan_no) AS TOTAL_LOAN_COUNT,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DPD > 0 THEN a.loan_no END),0) AS one_plus_dpd_loan_count,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	one_plus_dpd_loan_count * 100/total_loan_count END AS one_plus_dpd_loan_count_percent,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DPD > 30 THEN a.loan_no END),0) AS thirty_plus_dpd_loan_count,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	thirty_plus_dpd_loan_count * 100/total_loan_count END AS thirty_plus_dpd_loan_count_percent,
+		COALESCE(COUNT(DISTINCT CASE WHEN b.DPD > 60 THEN a.loan_no END),0) AS SIXTY_PLUS_DPD_LOAN_COUNT,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	SIXTY_PLUS_DPD_LOAN_COUNT * 100/total_loan_count END AS SIXTY_PLUS_DPD_LOAN_COUNT_PERCENT,
+		COALESCE(COUNT(DISTINCT CASE WHEN b.DPD > 90 THEN a.loan_no END),0) AS ninety_plus_dpd_loan_count,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	ninety_plus_dpd_loan_count * 100/total_loan_count END AS ninety_plus_dpd_loan_count_percent,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DPD > 180 THEN a.loan_no END),0) AS one_eighty_plus_dpd_loan_count,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	one_eighty_plus_dpd_loan_count * 100/total_loan_count END AS one_eighty_plus_dpd_loan_count_percent,
+    sum(lps.total_pos_amt ) AS TOTAL_POS_AMOUNT,
+	COALESCE(SUM(DISTINCT CASE WHEN b.DPD > 0 THEN lps.total_pos_amt  END),0) AS one_plus_dpd_loan_pos,
+	CASE 
+        WHEN sum(lps.total_pos_amt ) = 0 THEN 0
+    ELSE 
+    one_plus_dpd_loan_pos * 100.0 /sum(lps.total_pos_amt )    END AS one_plus_dpd_loan_pos_percent,	
+	COALESCE(SUM(DISTINCT CASE WHEN b.DPD > 30 THEN lps.total_pos_amt  END),0) AS thirty_plus_dpd_loan_pos,
+	CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	thirty_plus_dpd_loan_pos * 100.0 /sum(lps.total_pos_amt ) END AS thirty_plus_dpd_loan_pos_percent,
+		COALESCE(SUM(DISTINCT CASE WHEN b.DPD > 60 THEN lps.total_pos_amt  END),0) AS sixty_plus_dpd_loan_pos,
+	CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	sixty_plus_dpd_loan_pos * 100.0 /sum(lps.total_pos_amt) END AS sixty_plus_dpd_loan_pos_percent,
+	COALESCE(SUM(DISTINCT CASE WHEN b.DPD > 90 THEN lps.total_pos_amt  END),0) AS ninety_plus_dpd_loan_pos,
+	CASE 
+        WHEN sum(lps.total_pos_amt ) = 0 THEN 0
+    ELSE 
+	ninety_plus_dpd_loan_pos * 100.0 /sum(lps.total_pos_amt )    END AS ninety_plus_dpd_loan_pos_percent,
+	COALESCE(SUM(DISTINCT CASE WHEN b.DPD > 180 THEN lps.total_pos_amt  END),0) AS one_eighty_plus_dpd_loan_pos,
+	CASE 
+        WHEN sum(lps.total_pos_amt ) = 0 THEN 0
+    ELSE 
+	one_eighty_plus_dpd_loan_pos * 100.0 /sum(lps.total_pos_amt ) END AS one_eighty_plus_dpd_loan_pos_percent,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.NPA_LOAN = 1 THEN a.loan_no END),0) AS GROSS_NPA_COUNT,
+	CASE 
+        WHEN sum(lps.total_pos_amt ) = 0 THEN 0
+        ELSE 
+			SUM(case when a.NPA_LOAN = 1 then lps.total_pos_amt  ELSE 0 END) END AS gross_npa_pos,
+    	CASE 
+        WHEN sum(lps.total_pos_amt ) = 0 THEN 0
+        ELSE 
+			SUM(case when a.NPA_LOAN = 1 then lps.total_pos_amt  ELSE 0 END) * 100.0 / sum(lps.total_pos_amt ) END AS GROSS_NPA_PERCENT_ON_POS,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'ON-BOOK' THEN a.loan_no END),0) AS GROSS_NPA_ON_BOOK_COUNT,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'OFF-BOOK' THEN a.loan_no END),0) AS GROSS_NPA_OFF_BOOK_COUNT,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'PTC' THEN a.loan_no END),0) AS GROSS_NPA_PTC_BOOK_COUNT,
+	COALESCE(SUM(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'ON-BOOK' THEN lps.total_pos_amt  END),0) AS GROSS_NPA_ON_BOOK_AMOUNT,
+    COALESCE(SUM(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'OFF-BOOK' THEN lps.total_pos_amt  END),0) AS GROSS_NPA_OFF_BOOK_AMOUNT,
+    COALESCE(SUM(DISTINCT CASE WHEN a.NPA_LOAN = 1 and a.ON_OFF_BOOK = 'PTC' THEN lps.total_pos_amt  END),0) AS GROSS_NPA_PTC_AMOUNT,
+	COALESCE(COUNT(DISTINCT CASE WHEN UPPER(d.GROSS_STATUS) = 'BOUNCED' THEN a.loan_no END),0) AS GROSS_BOUNCE_COUNT,
+	COALESCE(COUNT(DISTINCT CASE WHEN UPPER(d.NET_STATUS) = 'BOUNCED' THEN a.loan_no END),0) AS NET_BOUNCE_COUNT,
+	COALESCE(SUM(DISTINCT CASE WHEN UPPER(d.GROSS_STATUS) = 'BOUNCED' THEN lps.total_pos_amt  END),0) AS GROSS_BOUNCE_AMOUNT,
+	COALESCE(SUM(DISTINCT CASE WHEN UPPER(d.NET_STATUS) = 'BOUNCED' THEN lps.total_pos_amt  END),0) AS NET_BOUNCE_AMOUNT,	
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	GROSS_BOUNCE_COUNT * 100/total_loan_count END AS GROSS_BOUNCE_RATE,
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	NET_BOUNCE_COUNT * 100/total_loan_count END AS NET_BOUNCE_RATE,
+	COALESCE(COUNT(DISTINCT CASE WHEN bs.bounce_count = 1  THEN a.loan_no END),0)  AS FRESH_BOUNCE_CASES,
+	COALESCE(COUNT(DISTINCT CASE WHEN bs.bounce_count > 1  THEN a.loan_no END),0)  AS REPEATED_BOUNCE_CASES,
+	COALESCE(SUM(DISTINCT CASE WHEN (a.OP_DPD > 90 or a.AFS_LOAN = 1) and a.CURRENT_STATUS = 'NORMAL'   THEN lps.total_pos_amt  END),0) AS TOTAL_POS_NPL_WITH_RESOLUTION_PLAN, 
+	COALESCE(COUNT(DISTINCT CASE WHEN a.ON_OFF_BOOK = 'ON-BOOK' THEN a.loan_no END),0) AS on_book_loan_count,
+    COALESCE(COUNT(DISTINCT CASE WHEN a.ON_OFF_BOOK = 'OFF-BOOK' THEN a.loan_no END),0) AS off_book_loan_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.ON_OFF_BOOK = 'ON-BOOK' THEN lps.total_pos_amt  END),0) AS on_book_loan_pos,
+    COALESCE(SUM(DISTINCT CASE WHEN a.ON_OFF_BOOK = 'OFF-BOOK' THEN lps.total_pos_amt  END),0) AS off_book_loan_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CHEQUE_IN_TRANSIT_COUNT = 1 THEN a.loan_no END),0) AS cheque_in_transit_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CHEQUE_IN_TRANSIT_COUNT = 1 THEN lps.total_pos_amt  END),0) AS cheque_in_transit_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN UPPER(d.GROSS_STATUS) = 'REALIZED' AND  UPPER(d.NET_STATUS) = 'PASS' and b.DPD = 0 and a.OP_DPD = 0 THEN a.loan_no END),0) AS cleared_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN UPPER(d.GROSS_STATUS) = 'REALIZED' AND UPPER(d.NET_STATUS) = 'PASS' AND b.DPD = 0 and a.OP_DPD = 0 THEN  lps.total_pos_amt  END),0) AS cleared_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0) AS normal_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0) AS normal_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.BUCKET_HEAD = 'NPL' THEN a.loan_no END),0) AS npl_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.BUCKET_HEAD = 'NPL' THEN lps.total_pos_amt  END),0) AS npl_customer_amount,	
+	CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	npl_customer_count*100/total_loan_count END AS npl_customer_count_percent,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0) AS rollback_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'FLOW' THEN a.loan_no END),0) AS rollback_flow_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'GCL' THEN a.loan_no END),0) AS rollback_gcl_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'NPL' THEN a.loan_no END),0) AS rollback_npl_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt END),0) AS rollback_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'FLOW' THEN lps.total_pos_amt  END),0) AS rollback_flow_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'GCL' THEN lps.total_pos_amt  END),0) AS rollback_gcl_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.BUCKET_HEAD = 'NPL' THEN lps.total_pos_amt  END),0) AS rollback_npl_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' THEN a.loan_no  END),0) AS stable_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt   END),0) AS stable_customer_pos,	
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'RTD' THEN a.loan_no  END),0) AS rtd_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt   END),0) AS rtd_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no  END),0) AS rollforward_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'FLOW' THEN a.loan_no  END),0) AS rollforward_flow_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'GCL' THEN a.loan_no  END),0) AS rollforward_gcl_customer_count,
+	COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'NPL' THEN a.loan_no  END),0) AS rollforward_npl_customer_count,	
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt   END),0) AS rollforward_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'FLOW'  THEN lps.total_pos_amt   END),0) AS rollforward_flow_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'GCL' THEN lps.total_pos_amt END),0) AS rollforward_gcl_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.BUCKET_HEAD = 'NPL' THEN lps.total_pos_amt END),0) AS rollforward_npl_customer_pos,
+	CASE WHEN total_loan_count = 0 then 0
+	ELSE 
+	(cleared_customer_count + normal_customer_count + rollback_customer_count + stable_customer_count + rtd_customer_count ) * 100 /total_loan_count END AS RESOLUTION_COUNT_PERCENT,
+	CASE 
+	WHEN TOTAL_POS_AMOUNT = 0 then 0
+	ELSE 
+	(cleared_customer_pos + normal_customer_pos + rollback_customer_pos + stable_customer_pos + rtd_customer_pos ) * 100 /TOTAL_POS END AS RESOLUTION_POS_PERCENT,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DISBURSAL_STATUS = 'Fully Disbursed' and a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0) AS emi_normal_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' and b.DISBURSAL_STATUS = 'Fully Disbursed' THEN lps.total_pos_amt  END),0) AS emi_normal_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DISBURSAL_STATUS = 'Fully Disbursed' and a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0) AS emi_stable_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' and b.DISBURSAL_STATUS = 'Fully Disbursed' THEN lps.total_pos_amt  END),0) AS emi_stable_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DISBURSAL_STATUS = 'Partially Disbursed' and a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0) AS pemi_normal_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' and b.DISBURSAL_STATUS = 'Partially Disbursed' THEN lps.total_pos_amt  END),0) AS pemi_normal_customer_pos,
+	COALESCE(COUNT(DISTINCT CASE WHEN b.DISBURSAL_STATUS = 'Partially Disbursed' and a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0) AS pemi_stable_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' and b.DISBURSAL_STATUS = 'Partially Disbursed' THEN lps.total_pos_amt  END),0) AS pemi_stable_customer_pos,	
+	COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Unpaid'  THEN a.loan_no END),0) AS unpaid_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.PAID_STATUS = 'Unpaid'  THEN lps.total_pos_amt  END),0) AS unpaid_customer_pos,	
+	COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid'  THEN a.loan_no END),0) AS paid_customer_count,
+	COALESCE(SUM(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid'  THEN lps.total_pos_amt  END),0) AS paid_customer_pos,
+	COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD != 0 and b.DPD = 0 THEN lps.total_pos_amt  END),0)  AS AS_ON_DATE_NORMAL, 
+	CASE WHEN TOTAL_POS_AMOUNT = 0 then 0
+	ELSE 
+	(COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and b.DPD = 0 THEN lps.total_pos_amt  END),0)) * 100/TOTAL_POS END AS NORMALIZATION_PERCENT,
+CASE WHEN TOTAL_LOAN_COUNT = 0 then 0 
+ELSE  
+(paid_customer_count*100)/TOTAL_LOAN_COUNT END  AS RESOLUTION_PAID_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' and a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END),0) AS AFFORDABLE_PAID_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Unpaid' and a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END),0) AS AFFORDABLE_UNPAID_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.VERTICAL = 'AFFORDABLE'  THEN a.loan_no END),0) AS AFFORDABLE_GRAND_TOTAL_COUNT,
+COALESCE(
+    COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' AND a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END) * 100.0 /
+    NULLIF(COUNT(DISTINCT CASE WHEN a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END), 0),0) AS AFFORDABLE_RESOLUTION_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' and a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END),0) AS AFFORDABLE_NORMAL_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' and a.VERTICAL = 'AFFORDABLE' THEN a.loan_no  END),0) AS AFFORDABLE_STABLE_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.VERTICAL = 'AFFORDABLE' THEN a.loan_no END),0) AS AFFORDABLE_ROLLFORWARD_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.STATUS = 'Cheque in transit' and a.VERTICAL = 'AFFORDABLE'   THEN a.loan_no END),0) AS AFFORDABLE_CHEQUE_IN_TRANSIT_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.WRITEOFF_LOAN = 1  THEN lps.total_pos_amt  END),0) AS WRITEOFF_TOTAL_POS,
+NULL AS AFS_CLOSED_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1  THEN a.loan_no END),0) AS AFS_TOTAL_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'NORMAL'   THEN a.loan_no END),0) AS AFS_NORMAL_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'STABLE'  THEN a.loan_no END),0) AS AFS_CLEARANCE_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'STABLE'  THEN a.loan_no END),0) AS AFS_STABLE_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'RTD'  THEN a.loan_no END),0) AS AFS_RTD_COUNT,  
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'ROLLBACK'  THEN a.loan_no END),0) AS AFS_ROLLBACK_COUNT,  
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.CURRENT_STATUS = 'ROLLFORWARD'  THEN a.loan_no END),0) AS AFS_ROLLFORWARD_COUNT,  
+COALESCE(COUNT(DISTINCT CASE WHEN a.AFS_LOAN = 1 and a.STATUS = 'Cheque in transit'   THEN a.loan_no END),0) AS AFS_CHEQUE_IN_TRANSIT_COUNT, 
+CASE WHEN AFS_TOTAL_COUNT = 0 then 0
+	ELSE 
+	(AFS_CLEARANCE_COUNT + AFS_NORMAL_COUNT + AFS_ROLLBACK_COUNT + AFS_STABLE_COUNT + AFS_RTD_COUNT ) * 100 /total_loan_count END AS AFS_RESOLUTION_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)    AS    one_thirty_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)    AS    one_thirty_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)      AS    one_thirty_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	 AS    one_thirty_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0) AS    one_thirty_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)    AS    one_thirty_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	one_thirty_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS one_thirty_OP_DPD_NORMAL_LOAN_COUNT_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)         AS    thirty_sixty_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)       AS    thirty_sixty_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)         AS    thirty_sixty_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	     AS    thirty_sixty_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0)    AS    thirty_sixty_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)       AS    thirty_sixty_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	thirty_sixty_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS thirty_sixty_OP_DPD_NORMAL_LOAN_COUNT_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)         AS    sixty_ninety_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)       AS    sixty_ninety_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)         AS    sixty_ninety_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	     AS     sixty_ninety_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0)    AS    sixty_ninety_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)       AS    sixty_ninety_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	sixty_ninety_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS sixty_ninety_OP_DPD_NORMAL_LOAN_COUNT_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)      	 AS    ninety_onehundredtwenty_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)    	 AS    ninety_onehundredtwenty_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)      	 AS    ninety_onehundredtwenty_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	   	 AS    ninety_onehundredtwenty_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0) 	 AS    ninety_onehundredtwenty_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)    	 AS    ninety_onehundredtwenty_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	ninety_onehundredtwenty_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS ninety_onehundredtwenty_OP_DPD_NORMAL_LOAN_COUNT_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)       AS    onehundredtwenty_onehundredeighty_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)     AS    onehundredtwenty_onehundredeighty_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)       AS    onehundredtwenty_onehundredeighty_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	 AS    onehundredtwenty_onehundredeighty_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0)  AS    onehundredtwenty_onehundredeighty_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)     AS    onehundredtwenty_onehundredeighty_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	onehundredtwenty_onehundredeighty_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS onehundredtwenty_onehundredeighty_OP_DPD_NORMAL_COUNT_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'NORMAL' THEN a.loan_no END),0)      AS    onehundredeighty_ABOVE_OP_DPD_NORMAL_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'ROLLBACK' THEN a.loan_no END),0)    AS    onehundredeighty_ABOVE_OP_DPD_ROLLBACK_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'STABLE' THEN a.loan_no END),0)      AS    onehundredeighty_ABOVE_OP_DPD_STABLE_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'RTD' THEN a.loan_no END),0) 	   	 AS    onehundredeighty_ABOVE_OP_DPD_RTD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN a.loan_no END),0) AS    onehundredeighty_ABOVE_OP_DPD_ROLLFORWARD_LOAN_COUNT,
+COALESCE(COUNT(DISTINCT CASE WHEN a.OP_DPD > 180  and a.STATUS = 'Cheque in transit' THEN a.loan_no END),0)    AS    onehundredeighty_ABOVE_OP_DPD_CHQ_IN_TRANSIT_LOAN_COUNT,
+CASE 
+	WHEN total_loan_count = 0 then 0
+	else
+	onehundredeighty_ABOVE_OP_DPD_NORMAL_LOAN_COUNT * 100/total_loan_count END AS  onehundredeighty_ABOVE_OP_DPD_NORMAL_LOAN_COUNT_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	AS one_thirty_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)    AS one_thirty_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	AS one_thirty_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)  		AS one_thirty_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS one_thirty_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 0 and a.OP_DPD <= 30 and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)   AS one_thirty_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	one_thirty_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS one_thirty_DPD_NORMAL_LOAN_POS_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	 AS  thirty_sixty_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)    AS  thirty_sixty_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	 AS  thirty_sixty_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)  		 AS  thirty_sixty_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS  thirty_sixty_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 30 and a.OP_DPD <= 60 and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)   AS  thirty_sixty_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	thirty_sixty_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS thirty_sixty_DPD_NORMAL_LOAN_POS_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	 AS  sixty_ninety_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)    AS  sixty_ninety_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	 AS  sixty_ninety_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)  		 AS  sixty_ninety_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS  sixty_ninety_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 60 and a.OP_DPD <= 90 and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)   AS  sixty_ninety_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	sixty_ninety_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS sixty_ninety_DPD_NORMAL_LOAN_POS_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	 AS  ninety_onehundredtwenty_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)    AS  ninety_onehundredtwenty_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	 AS  ninety_onehundredtwenty_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)  		 AS  ninety_onehundredtwenty_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS  ninety_onehundredtwenty_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 90 and a.OP_DPD <= 120 and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)   AS  ninety_onehundredtwenty_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	ninety_onehundredtwenty_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS ninety_onehundredtwenty_DPD_NORMAL_LOAN_POS_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	   AS  onehundredtwenty_onehundredeighty_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)    AS  onehundredtwenty_onehundredeighty_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	   AS  onehundredtwenty_onehundredeighty_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)         AS  onehundredtwenty_onehundredeighty_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS  onehundredtwenty_onehundredeighty_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 120 and a.OP_DPD <= 180 and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)   AS  onehundredtwenty_onehundredeighty_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	onehundredtwenty_onehundredeighty_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS onehundredtwenty_onehundredeighty_DPD_NORMAL_POS_PERCENT,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0)  	 AS  onehundredeighty_ABOVE_DPD_NORMAL_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0)     AS  onehundredeighty_ABOVE_DPD_ROLLBACK_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0)  	 AS  onehundredeighty_ABOVE_DPD_STABLE_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0)  		 AS  onehundredeighty_ABOVE_DPD_RTD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0)  AS  onehundredeighty_ABOVE_DPD_ROLLFORWARD_LOAN_POS,
+COALESCE(SUM(DISTINCT CASE WHEN a.OP_DPD > 180  and  a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0)    AS  onehundredeighty_ABOVE_DPD_CHQ_IN_TRANSIT_LOAN_POS,
+CASE 
+        WHEN sum(lps.total_pos_amt) = 0 THEN 0
+    ELSE 
+	onehundredeighty_ABOVE_DPD_NORMAL_LOAN_POS * 100.0 /sum(lps.total_pos_amt) END AS onehundredeighty_ABOVE_DPD_NORMAL_LOAN_POS_PERCENT,
+COALESCE(COUNT(DISTINCT CASE WHEN (UPPER(a.CURRENT_STATUS) = 'ROLLFORWARD' AND UPPER(d.GROSS_STATUS) = 'Bounced' and (b.DPD > 0 and b.DPD <= 90))  THEN a.loan_no END),0) AS bouncing_1_90_rollforward_count,
+COALESCE(COUNT(DISTINCT CASE WHEN UPPER(a.CURRENT_STATUS) = 'ROLLFORWARD' AND UPPER(d.GROSS_STATUS) = 'Bounced' and b.DPD > 90  THEN a.loan_no END),0) AS bouncing_90plus_rollforward_count,
+COALESCE(COUNT(DISTINCT CASE WHEN (UPPER(a.STATUS) = 'Cheque in transit' AND UPPER(d.GROSS_STATUS) = 'Bounced' and (b.DPD > 0 and b.DPD <= 90))  THEN a.loan_no END),0) AS bouncing_1_90_cheque_in_transit_count,
+COALESCE(COUNT(DISTINCT CASE WHEN (a.PAID_STATUS = 'Paid' AND UPPER(d.GROSS_STATUS) = 'Bounced' and (b.DPD > 0 and b.DPD <= 90))  THEN a.loan_no END),0) AS bouncing_1_90_paid_count,
+COALESCE(COUNT(DISTINCT CASE WHEN (a.CURRENT_STATUS= 'STABLE' AND UPPER(d.GROSS_STATUS) = 'Bounced' and (b.DPD > 0 and b.DPD <= 90))  THEN a.loan_no END),0) AS bouncing_1_90_stable_count,	
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' and lps.total_pos_amt >= 2500000 THEN a.loan_no END),0) AS greater_than_25_LAC_POS_PAID_CASES, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Unpaid' and lps.total_pos_amt >= 2500000 THEN a.loan_no END),0) AS GREATER_THAN_25_LAC_POS_UNPAID_CASES,  
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' and b.DPD > 0 and a.OP_DPD > 0 and a.PENAL_AMOUNT_OUTSTANDING > 0 THEN a.loan_no END),0) AS TOTAL_PENAL_RECEIVED_LOAN_COUNT, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' and b.DPD = 0 and  a.REMAINING_TENURE >= 6 THEN a.loan_no END),0) AS Fully_Paid_Loans_DPD_0_AND_6_Plus_Instalments_Count, 
+COALESCE(SUM(DISTINCT CASE WHEN a.PAID_STATUS = 'Paid' and b.DPD = 0 and  a.REMAINING_TENURE >= 6 THEN a.PENAL_AMOUNT_OUTSTANDING END)/10000000,0) AS Penal_Outstanding_DPD_0_Fully_Paid_AND_6_Plus_Instalments, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.MORATORIUM = 1  THEN a.loan_no  END),0) AS TOTAL_MORATORIUM_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1  THEN lps.total_pos_amt  END),0) AS TOTAL_MORATORIUM_POS, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.PAID_STATUS = 'Unpaid' THEN a.loan_no END),0) AS UNPAID_MORATORIUM_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.PAID_STATUS = 'Unpaid' THEN lps.total_pos_amt  END),0) AS UNPAID_MORATORIUM_POS, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'NORMAL' and a.MORATORIUM = 1 THEN a.loan_no END),0) AS MORATORIUM_MIS_NORMAL_COUNT,  
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.CURRENT_STATUS = 'NORMAL' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_NORMAL_POS, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.MORATORIUM = 1 and UPPER(d.GROSS_STATUS) = 'REALIZED' AND  UPPER(d.NET_STATUS) = 'PASS' and b.DPD = 0 and a.OP_DPD = 0 THEN a.loan_no END),0) AS MORATORIUM_MIS_CLEARANCE_MARK_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and UPPER(d.GROSS_STATUS) = 'REALIZED' AND  UPPER(d.NET_STATUS) = 'PASS' and b.DPD = 0 and a.OP_DPD = 0 THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_CLEARANCE_MARK_POS, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'STABLE' and a.MORATORIUM = 1 THEN a.loan_no END),0) AS MORATORIUM_MIS_STABLE_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.CURRENT_STATUS = 'STABLE' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_STABLE_POS, 
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLFORWARD' and a.MORATORIUM = 1 THEN a.loan_no END),0) AS MORATORIUM_MIS_ROLLFORWARD_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.CURRENT_STATUS = 'ROLLFORWARD' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_ROLLFORWARD_POS,
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'ROLLBACK' and a.MORATORIUM = 1 THEN a.loan_no END),0) AS MORATORIUM_MIS_ROLLBACK_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.CURRENT_STATUS = 'ROLLBACK' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_ROLLBACK_POS,
+COALESCE(COUNT(DISTINCT CASE WHEN a.CURRENT_STATUS = 'RTD' and a.MORATORIUM = 1 THEN a.loan_no END),0) AS MORATORIUM_MIS_RTD_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.CURRENT_STATUS = 'RTD' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_RTD_POS,
+ COALESCE(COUNT(DISTINCT CASE WHEN a.STATUS = 'Cheque in transit' and a.MORATORIUM = 1   THEN a.loan_no END),0) AS MORATORIUM_MIS_CHQ_IN_TRANSIT_COUNT, 
+COALESCE(SUM(DISTINCT CASE WHEN a.MORATORIUM = 1 and a.STATUS = 'Cheque in transit' THEN lps.total_pos_amt  END),0) AS MORATORIUM_MIS_CHQ_IN_TRANSIT_POS, 
+CASE WHEN TOTAL_MORATORIUM_COUNT = 0 then 0
+	ELSE 
+	(MORATORIUM_MIS_CLEARANCE_MARK_COUNT + MORATORIUM_MIS_NORMAL_COUNT + MORATORIUM_MIS_ROLLBACK_COUNT + MORATORIUM_MIS_STABLE_COUNT + MORATORIUM_MIS_RTD_COUNT ) * 100 /TOTAL_MORATORIUM_COUNT END AS MORATORIUM_MIS_RESOLUTION_COUNT,
+	CASE WHEN TOTAL_MORATORIUM_POS = 0 then 0
+	ELSE 
+	(MORATORIUM_MIS_CLEARANCE_MARK_POS + MORATORIUM_MIS_NORMAL_POS + MORATORIUM_MIS_ROLLBACK_POS + MORATORIUM_MIS_STABLE_POS + MORATORIUM_MIS_RTD_POS ) * 100 /TOTAL_MORATORIUM_POS END AS MORATORIUM_MIS_RESOLUTION_POS
+FROM (select * from DISHA_MART_ANALYTICS.COLLECTION_MART.DELINQUENCY_MART WHERE TO_DATE(start_timestamp) <= '2024-09-10' 
+  AND (TO_DATE(end_timestamp) > '2024-09-10' OR TO_DATE(end_timestamp) IS NULL)
+)  a
+INNER JOIN (
+    SELECT * 
+    FROM DISHA_L2_CURATED.HISTORICAL_LOAD.COLL_DUELIST 
+    WHERE extracted_date = '2024-09-10'
+) b ON TRIM(a.loan_no) = TRIM(b.loan_no)
+LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.loan_pos_summary lps ON TRIM(a.loan_no) = TRIM(lps.loan_no)
+left join 
+(select * from DISHA_MART_ANALYTICS.COLLECTION_MART.COLLECTION_BOUNCE where TO_DATE(instrument_date,'dd-mm-yyyy') = '2024-09-10') d ON a.loan_no = d.loan_no 
+LEFT JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.bounce_summary bs on TRIM(a.loan_no) = TRIM(bs.loan_no)
+   group by a.BRANCH_NAME,a.BRANCH_STATE,a.PRODUCT_NAME,a.PRODUCT_CATEGORY,a.VERTICAL, a.COLLECTION_AGENT_EMP_ID,
+a.COLLECTION_RESPONSIBILITY,a.COLL_TL_EMP_ID,a.COLL_TL,a.COLL_ACM_EMP_ID,a.COLL_ACM,a.COLL_SH_EMP_ID,a.COLL_SH_NPL,a.COLL_ZH_EMP_ID,a.COLL_COLL_ZH,
+a.COLL_AFFORDABLE_ACM_EMP_ID,a.COLL_AFFORDABLE_ACM,a.COLL_NH_EMP_ID,a.COLL_NH,a.COLL_BH_EMP_ID,a.COLL_BH,a.SALES_EMPLOYEE_ID,a.SALES_EMPLOYEE_NAME,
+a.SALES_BSM_ID,a.SALES_BSM_NAME,a.SALES_PM_ID,a.SALES_PM_NAME,a.SALES_BH_ID,a.SALES_BH_NAME,a.SALES_SH_ID,a.SALES_SH_NAME,a.SALES_ZH_ID,a.SALES_ZH_NAME,
+a.SALES_NSM_ID,a.SALES_NSM_NAME,a.SALES_VH_ID,a.SALES_VH_NAME,a.SALES_BSH_ID,a.SALES_BSH_NAME,a.CREDIT_ACM_ID,a.CREDIT_ACM_NAME,a.CREDIT_SCM_ID,
+a.CREDIT_SCM_NAME,a.CREDIT_ZCM_ID,a.CREDIT_ZCM_NAME,a.CREDIT_ZCH_ID,a.CREDIT_ZCH_NAME,a.CREDIT_NCH_ID,a.CREDIT_NCH_NAME,a.TICKET
+;
