@@ -1,0 +1,347 @@
+CREATE OR REPLACE PROCEDURE DISHA_MART_ANALYTICS.REGULATORY_MART.LOAD_BUSINESS_MIS_MART_CANCELLED("START_DATE" DATE DEFAULT DATE_ADDMONTHSTODATE(-1, CURRENT_DATE()))
+RETURNS VARCHAR(2550)
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS 'DECLARE 
+	PROC_NAME VARCHAR(500):=''DISHA_MART_ANALYTICS.REGULATORY_MART.LOAD_BUSINESS_MIS_MART_CANCELLED'';
+	TBL_NAME VARCHAR(500):=''DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED'';
+    TOTAL_ROWS_IN_PREFINAL INTEGER DEFAULT 0;
+    ROWS_INSERTED INTEGER DEFAULT 0;
+    ROWS_UPDATED INTEGER DEFAULT 0;
+    ROWS_UNCHANGED INTEGER DEFAULT 0;
+    DUPLICATE_COUNT INTEGER;
+    DUPLICATE_DETAILS VARCHAR(2000);
+    CURR_TIME TIMESTAMP := TO_VARCHAR(CURRENT_TIMESTAMP());
+    ERROR_MESSAGE VARCHAR(1000);
+    FINAL_OUTPUT VARCHAR(4000);
+	
+	-- Variables for dynamic column handling
+    INSERT_COLUMN_LIST VARCHAR;
+    INSERT_VALUE_LIST VARCHAR;
+	
+    -- SQL statements to execute
+    INSERT_STATEMENT VARCHAR(16000);
+	
+BEGIN
+	-- STEP 1: Initialize date parameters for the current month
+    LET MONTH_START_DATE DATE := DATE_TRUNC(''MONTH'',:START_DATE);
+    LET MONTH_END_DATE DATE := LAST_DAY(:START_DATE);
+
+
+--Create CANCELLED table if not exists	
+CREATE TABLE IF NOT EXISTS DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED (
+	LOAN_NO_OLD	VARCHAR(255),
+	LOAN_NO	VARCHAR(255),
+	LOAN_APPLICATION_NAME	VARCHAR(511),
+	MONTH	VARCHAR(3),
+	CUSTOMER_ID	NUMBER(38,0),
+	CUSTOMER_NAME	VARCHAR(255),
+	GENDER	VARCHAR(10),
+	BRANCH	VARCHAR(255),
+	STATE	VARCHAR(255),
+	LOANAMOUNT	FLOAT,
+	DISBURSAL_AMT	FLOAT,
+	WIRR	FLOAT,
+	TERMINATION_DATE DATE,
+	FIRST_DISBURSAL_DATE	DATE,
+	LOAN_FINAL_RATE	FLOAT,
+	LOAN_SANCTION_ROI	NUMBER(38,0),
+	LTV	FLOAT,
+	FOIR	FLOAT,
+	TENURE	FLOAT,
+	HL_NHL	VARCHAR(255),
+	SCHEME	VARCHAR(13),
+	PRODUCT	VARCHAR(255),
+	CUSTOMER_CONSTITUTION	VARCHAR(255),
+	ASSET_COLLATERAL_VALUE	FLOAT,
+	TYPE_OF_CANCELLATION	VARCHAR(17),
+	NSM_NAME	VARCHAR(255),
+	BUSINESS_STATE	VARCHAR(255),
+	RO_ID	VARCHAR(255),
+	LOAN_PURPOSE_FC	VARCHAR(255),
+	PROPERTY_IDENTIFIER_FC	VARCHAR(255),
+	CREDIT_DECISION_IDENTIFIER_FC	VARCHAR(255),
+	TRANSACTION_EXECUTION_MODE_FC	VARCHAR(255),
+	TRANSACTION_STRUCTURE_FC	VARCHAR(255),
+	REPORT_DATE DATE
+);
+
+--Clean existing data for given month
+	DELETE FROM DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED 
+	WHERE REPORT_DATE =LAST_DAY(:START_DATE);
+
+
+-- Create temporary table for RO_ID mapping
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.RO_ID AS
+SELECT LOAN_ACCOUNT_NUMBER  AS lan_new, 
+	   OMNI_LOAN_NO AS loan_no_o, 
+	   EMPLOYEE_CODE as RO_ID 
+	   FROM DISHA_MART_ANALYTICS.SALES_CREDIT_MART.LOAN_ACCOUNT_MART WHERE DATE(START_TIMESTAMP)<=DATEADD(DAY,1,:MONTH_END_DATE) AND (DATE(END_TIMESTAMP)>DATEADD(DAY,1,:MONTH_END_DATE) OR END_TIMESTAMP IS NULL);
+	   
+-- Create booking report table (assuming CSV data is already loaded into a table)
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.BOOKING_REPORT AS 
+SELECT 
+    TRIM(TO_VARCHAR(new_loan_account_number)) as cod_acct_no,
+    loan_application_number, 
+    ROUND(rate_of_interest, 0.02) as irr,
+    foir, 
+    asset_collateral_value
+from DISHA_L2_CURATED.HISTORICAL_LOAD.BOOKING_REPORT where DATE(extracted_date)=DATEADD(DAY,1,:MONTH_END_DATE);
+
+-- Create FOIR calculation table
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.foir AS
+SELECT DISTINCT 
+    brn.cod_acct_no as loan_no,
+    CASE 
+        WHEN brn.foir = 0 THEN 
+            CASE 
+                WHEN ABS(lac.foir__c) >= 100 THEN 100 
+                ELSE ABS(lac.foir__c) 
+            END 
+        WHEN brn.foir = 0 AND (lac.foir__c = '''' OR lac.foir__c IS NULL) THEN 0 
+        ELSE 
+            CASE 
+                WHEN brn.foir >= 100 THEN 100 
+                ELSE brn.foir 
+            END 
+    END as foir, 
+    ROUND(TRY_TO_NUMBER(loan_sanction_roi), 0.01) as loan_sanction_roi
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.booking_report brn
+LEFT JOIN (SELECT * FROM (
+    SELECT  
+        FOIR AS foir__c, 
+        LOAN_ROI as loan_sanction_roi, 
+        CASE 
+            WHEN LENGTH(LOAN_APPLICATION_IDV) = 15 AND SUBSTR(LOAN_APPLICATION_IDV, 9, 6) <> ''000000'' 
+            THEN SUBSTR(LOAN_APPLICATION_IDV, 9, 6)
+            WHEN SUBSTR(LOAN_APPLICATION_IDV, 9, 6) = ''000000'' 
+            THEN SUBSTR(TRIM(LMS_LOAN_NO), 15, 6) 
+            ELSE LOAN_APPLICATION_IDV 
+        END as loan_id 
+    FROM REG_UAT_BACKUP.BASE_MODEL_DATA.LOAN_APPLICATION_DETAILS_TRANS
+    WHERE LOAN_APPLICATION_IDV IS NOT NULL 
+		AND ACTIVATION_FLAG=1
+        AND UPPER(DEL_FLAG) = ''FALSE'' 
+        AND UPPER(TRIM(LOAN_APPLICATION_STAGE)) = ''DISBURSEMENT''
+) QUALIFY ROW_NUMBER() OVER(PARTITION BY LOAN_ID ORDER BY LOAN_ID DESC)=1) lac ON lac.loan_id = SUBSTR(brn.cod_acct_no, 9, 6);
+
+-- Create FC (Loan Attributes) table
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.fc AS 
+SELECT 
+    TRIM(LOAN_NO) As cod_acct_no,
+    TYPE_LOAN AS Loan_purpose_FC,
+    PROPERTY_IDENTIFIER as Property_Identifier_FC,
+    Transaction_Structure as Transaction_Structure_FC,
+    Credit_decision_identifier as Credit_decision_identifier_FC,
+    Transaction_Execution_Mode as Transaction_Execution_Mode_FC
+FROM REG_UAT_BACKUP.BASE_MODEL_DATA.LOAN_ACCOUNT_DETAILS  WHERE activation_flag = 1;
+
+-- =============================================================================
+-- CANCELLED DATA
+-- =============================================================================
+-- Create cancellation data
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.cancel1 AS
+SELECT 
+    TRIM(a.cod_acct_no) as lan_new, 
+    DATE(a.dat_process) as termination_date, 
+    c.amt_disbursed As Cancel_Amount
+FROM (SELECT * FROM REG_UAT_BACKUP.FLEX_LMS.ln_x_payment_chrgs where ACTIVATION_FLAG=1) a
+LEFT JOIN (
+    SELECT cod_acct_no, SUM(amt_disbursed) as amt_disbursed 
+    FROM REG_UAT_BACKUP.FLEX_LMS.ln_disb_log_hist 
+	where ACTIVATION_FLAG=1
+    GROUP BY cod_acct_no
+) c ON TRIM(c.cod_acct_no) = TRIM(a.cod_acct_no)
+WHERE DATE(a.dat_process) BETWEEN ''2025-04-01'' AND :MONTH_END_DATE
+    AND UPPER(type_source) = ''LC'';
+
+
+CREATE OR REPLACE TEMPORARY TABLE DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED_PREFINAL (
+	LOAN_NO_OLD	VARCHAR(255),
+	LOAN_NO	VARCHAR(255),
+	LOAN_APPLICATION_NAME	VARCHAR(511),
+	MONTH	VARCHAR(3),
+	CUSTOMER_ID	NUMBER(38,0),
+	CUSTOMER_NAME	VARCHAR(255),
+	GENDER	VARCHAR(10),
+	BRANCH	VARCHAR(255),
+	STATE	VARCHAR(255),
+	LOANAMOUNT	FLOAT,
+	DISBURSAL_AMT	FLOAT,
+	WIRR FLOAT,
+	TERMINATION_DATE DATE,
+	FIRST_DISBURSAL_DATE DATE,
+	LOAN_FINAL_RATE	FLOAT,
+	LOAN_SANCTION_ROI	NUMBER(38,0),
+	LTV	FLOAT,
+	FOIR	FLOAT,
+	TENURE	FLOAT,
+	HL_NHL	VARCHAR(255),
+	SCHEME	VARCHAR(13),
+	PRODUCT	VARCHAR(255),
+	CUSTOMER_CONSTITUTION	VARCHAR(255),
+	ASSET_COLLATERAL_VALUE	FLOAT,
+	TYPE_OF_CANCELLATION	VARCHAR(17),
+	NSM_NAME	VARCHAR(255),
+	BUSINESS_STATE	VARCHAR(255),
+	RO_ID	VARCHAR(255),
+	LOAN_PURPOSE_FC	VARCHAR(255),
+	PROPERTY_IDENTIFIER_FC	VARCHAR(255),
+	CREDIT_DECISION_IDENTIFIER_FC	VARCHAR(255),
+	TRANSACTION_EXECUTION_MODE_FC	VARCHAR(255),
+	TRANSACTION_STRUCTURE_FC	VARCHAR(255)
+) AS 
+SELECT 
+    TRIM(ln_old_new.cod_acct_no_old) as LOAN_NO_old,
+    TRIM(a.lan_new) as LOAN_NO,
+    CASE 
+        WHEN SUBSTR(TRIM(l.cod_agrmnt_no), 1, 2) = ''LA'' AND POSITION(''LA-'' IN TRIM(l.cod_agrmnt_no)) = 0
+        THEN CONCAT(SUBSTR(TRIM(l.cod_agrmnt_no), 1, 2), ''-'', SUBSTR(TRIM(l.cod_agrmnt_no), 3)) 
+        ELSE TRIM(l.cod_agrmnt_no)
+    END as loan_application_name,
+    MONTHNAME(a.termination_date) as Month,
+    b.cod_cust_id as customer_id,
+    b.nam_cust_full as CUSTOMER_NAME,
+    CASE 
+        WHEN b.txt_cust_sex = ''M'' THEN ''MALE'' 
+        WHEN b.txt_cust_sex = ''F'' THEN ''FEMALE'' 
+    END AS GENDER,
+    c.nam_branch as Branch,
+    c.NAM_CC_STATE as State,
+    l.amt_face_value as LoanAmount,
+    a.cancel_amount as Disbursal_Amt,
+    (br.irr * l.amt_face_value) / 100 as wirr,
+    a.Termination_Date,
+    DATE(l.dat_first_disb) as First_Disbursal_Date,
+    br.irr as Loan_Final_Rate,
+    lac.loan_sanction_roi,
+    e.ltv_pct as LTV,
+    lac.Foir,
+    l.CTR_TERM_MONTHS as Tenure,
+    CASE 
+        WHEN g.cod_prod_category = ''5'' THEN ''NHL''
+        ELSE g.cod_prod_category
+    END as HL_NHL,
+    CASE 
+        WHEN f.txt_scheme = ''G'' THEN ''General''
+        WHEN f.txt_scheme = ''EL'' THEN ''Employee Loan''
+        WHEN f.txt_scheme = ''S'' THEN ''STS''
+        ELSE ''Not found''
+    END as Scheme,
+    g.nam_product as product,
+    k.txt_cust_typ as customer_constitution,
+    br.asset_collateral_value,
+    ''LOAN CANCELLATION'' as type_of_cancellation,
+    h.nsm_name,
+    h.business_state,
+    a1.ro_id,
+    a2.loan_purpose_FC, 
+    a2.property_identifier_fc, 
+    a2.credit_decision_identifier_fc, 
+    a2.transaction_execution_mode_fc, 
+    a2.transaction_structure_fc
+FROM DISHA_MART_ANALYTICS.REGULATORY_MART.cancel1 a
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ln_x_old_new_acct_xref ln_old_new ON TRIM(ln_old_new.cod_acct_no_new) = TRIM(a.lan_new) and ln_old_new.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.ln_acct_dtls l ON TRIM(l.cod_acct_no) = TRIM(a.lan_new) and l.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUSTMAST b ON TRIM(b.cod_cust_id) = TRIM(l.cod_cust_id) and b.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.BA_CC_BRN_MAST c ON TRIM(c.cod_cc_brn) = TRIM(l.cod_cc_brn) and c.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_X_ACCT_LTV_DTLS e ON TRIM(e.cod_acct_no) = TRIM(a.lan_new) and e.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_X_ADDLN_ATTRIBUTES f ON TRIM(f.cod_acct_no) = TRIM(a.lan_new) and f.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_PROD_MAST g ON TRIM(g.cod_prod) = TRIM(l.cod_prod) and g.ACTIVATION_FLAG=1
+LEFT JOIN (
+    SELECT cod_acct_no, SUM(amt_coll_value) as amt_coll_value, MAX(cod_collat_id) as cod_collat_id 
+    FROM REG_UAT_BACKUP.FLEX_LMS.ba_ho_coll_acct_xref 
+    WHERE TRIM(flg_coll_sec) = ''P''  and ACTIVATION_FLAG=1
+    GROUP BY cod_acct_no
+) i ON TRIM(i.cod_acct_no) = TRIM(a.lan_new)
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.LN_ACCT_ATTRIBUTES_EXT z ON TRIM(z.cod_acct_no) = TRIM(a.lan_new) and z.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUSTMAST_EXT j ON TRIM(j.cod_cust_id) = TRIM(l.cod_cust_id) and j.ACTIVATION_FLAG=1
+LEFT JOIN REG_UAT_BACKUP.FLEX_LMS.CI_CUST_TYPES k ON TRIM(k.flg_cust_typ) = TRIM(b.flg_cust_typ) and k.ACTIVATION_FLAG=1 
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.booking_report br ON TRIM(br.cod_acct_no) = TRIM(a.lan_new)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.foir lac ON TRIM(lac.loan_no) = TRIM(a.lan_new)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.ro_id a1 ON TRIM(a1.lan_new) = TRIM(a.lan_new)
+LEFT JOIN (SELECT nsm_name,business_state,emp_id from DISHA_L1_HARMONIZED.RD_MAPPING.SALES_MAPPING_DAILY where date(start_Date)<=DATEADD(DAY,1,:MONTH_END_DATE) and (date(end_date)>DATEADD(DAY,1,:MONTH_END_DATE) or END_DATE is null)) h ON TRIM(h.emp_id) = TRIM(a1.ro_id)
+LEFT JOIN DISHA_MART_ANALYTICS.REGULATORY_MART.fc a2 ON TRIM(a2.cod_acct_no) = TRIM(a.lan_new);
+
+-- Count total rows in prefinal table
+    SELECT COUNT(*) INTO :TOTAL_ROWS_IN_PREFINAL
+    FROM DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED_PREFINAL;
+	
+----IF TOTAL ROW COUNT 0 , Return Detailed Error
+	IF (TOTAL_ROWS_IN_PREFINAL = 0) THEN
+		ERROR_MESSAGE := ''PREFINAL QUERY EXECUTED SUCCESSFULLY BUT RETURNED 0 RECORDS. PLEASE VERIFY SOURCE DATA AND JOIN CONDITIONS.'';
+		
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME,REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,:ROWS_INSERTED,:ROWS_UPDATED,:ROWS_UNCHANGED,''FAIL'',:CURR_TIME,CURRENT_TIMESTAMP,:ERROR_MESSAGE;	
+		
+		RETURN ''PREFINAL_FAILED: '' || ERROR_MESSAGE;
+	END IF;
+	
+    -- Insert column list (all columns including metadata columns)
+    SELECT LISTAGG(COLUMN_NAME, '','')  WITHIN GROUP (ORDER BY ORDINAL_POSITION)|| '',REPORT_DATE''
+    INTO :INSERT_COLUMN_LIST
+    FROM DISHA_MART_ANALYTICS.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = ''REGULATORY_MART''
+    AND TABLE_NAME = ''CANCELLED_PREFINAL''
+    AND TABLE_CATALOG = ''DISHA_MART_ANALYTICS'';
+    
+    -- Insert value list (dynamically mapping source columns)
+    SELECT LISTAGG(''S.'' || COLUMN_NAME, '','')  WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+    INTO :INSERT_VALUE_LIST
+    FROM DISHA_MART_ANALYTICS.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = ''REGULATORY_MART''
+    AND TABLE_NAME = ''CANCELLED_PREFINAL''
+    AND TABLE_CATALOG = ''DISHA_MART_ANALYTICS'';	
+
+INSERT_STATEMENT:= 
+	CONCAT(''INSERT INTO DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED('',
+			INSERT_COLUMN_LIST,'')
+			SELECT '',
+			INSERT_VALUE_LIST,'','','''''''',MONTH_END_DATE,'''''''',
+			'' FROM DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED_PREFINAL S
+			;'');
+	
+	EXECUTE IMMEDIATE :INSERT_STATEMENT;
+	
+-- Count rows affected
+         ROWS_INSERTED := (SELECT COUNT(*) FROM DISHA_MART_ANALYTICS.REGULATORY_MART.CANCELLED WHERE REPORT_DATE=:MONTH_END_DATE);	
+	
+         SELECT CONCAT(
+            ''===== DATA LOADING REPORT =====
+'',
+            ''Process Timestamp: '', :CURR_TIME, ''
+'',
+            ''Total Rows in Prefinal: '', :TOTAL_ROWS_IN_PREFINAL, ''
+'',
+            ''Rows Inserted: '', :ROWS_INSERTED, ''
+'',
+            ''Rows Updated: '', :ROWS_UPDATED, ''
+'',
+            ''Rows Unchanged: '', :ROWS_UNCHANGED, ''
+
+'',
+            ''
+
+'',
+            ''Status: SUCCESSFULLY LOADED DATA INTO CANCELLED''
+        ) INTO :FINAL_OUTPUT;
+				
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME, REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,:ROWS_INSERTED,:ROWS_UPDATED,:ROWS_UNCHANGED,''PASS'',:CURR_TIME,CURRENT_TIMESTAMP, :FINAL_OUTPUT;
+		
+		RETURN :FINAL_OUTPUT;
+		
+	----For Any other exception
+	EXCEPTION
+        WHEN OTHER THEN
+            ERROR_MESSAGE := ''ERROR IN LOAD: '' || SQLERRM || '' (ERROR CODE: '' || sqlcode || '')'';
+                        
+		INSERT INTO DISHA_MART_ANALYTICS.AUDIT_INFO.DAILY_COUNT_RECON
+		(PROCEDURE_NAME, TABLE_NAME, EXECUTION_DATE, PREFINAL_CNT, INSERTED_CNT, UPDATED_CNT, UNCHANGED_CNT,STATUS,START_TIME,END_TIME,REMARKS)
+		SELECT :PROC_NAME,:TBL_NAME,DATE(:CURR_TIME),:TOTAL_ROWS_IN_PREFINAL,0,:ROWS_UPDATED,:ROWS_UNCHANGED,''FAIL'',:CURR_TIME,CURRENT_TIMESTAMP,:ERROR_MESSAGE;	
+		
+		RETURN ''DATA LOADING FAILED, '' || ERROR_MESSAGE;
+		
+END';
