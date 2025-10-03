@@ -1,0 +1,96 @@
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.BASE AS (
+  SELECT
+    *,
+    MIN(instrument_date) OVER (PARTITION BY loan_no) AS min_inst_date,
+    MIN(received_date) OVER (PARTITION BY loan_no) AS min_recv_date,
+    MAX(instrument_date) OVER (PARTITION BY loan_no) AS max_inst_date
+  FROM DISHA_MART_ANALYTICS.COLLECTION_MART.COLLECTION_BOUNCE_TEST1 where month = '2025-07-01'
+);
+
+
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.NETS AS (
+  SELECT
+loan_no ,
+old_loan_no ,
+instrument_no ,
+deposit_bank_account ,
+instrument_mode ,
+instrument_amount  ,
+allocated_amt ,
+received_date ,
+CYCLE ,
+instrument_date ,
+gross_status ,
+reason_for_bouncing ,
+STATUS_MAX ,
+STATUS_13 ,
+STATUS_18 ,
+STATUS_24 ,
+net_status AS net_status_for_max_inst_date,
+MONTH ,
+'1' AS active_flag_new
+  FROM DISHA_MART_ANALYTICS.COLLECTION_MART.BASE
+  WHERE instrument_date = max_inst_date
+);
+
+
+
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.BOUNCE_WITHOUT_DUPLICATES AS (
+SELECT
+b.loan_no,
+b.old_loan_no ,
+b.instrument_no,
+b.deposit_bank_account ,
+b.instrument_mode ,
+b.instrument_amount,
+b.allocated_amt ,
+b.min_recv_date as received_date ,
+b.CYCLE ,
+b.min_inst_date AS instrument_date ,
+b.gross_status ,
+b.reason_for_bouncing ,
+b.STATUS_MAX ,
+b.STATUS_13 ,
+b.STATUS_18 ,
+b.STATUS_24 ,
+n.net_status_for_max_inst_date AS net_status,
+b.MONTH ,
+CASE WHEN UPPER(TRIM(b.gross_status)) = 'BOUNCED' then 1 else 0 END AS GROSS_BOUNCE ,
+CASE WHEN UPPER(TRIM(n.net_status_for_max_inst_date)) = 'BOUNCED' then 1 else 0 END AS NET_BOUNCE ,
+b.active_flag_new
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.BASE b
+JOIN DISHA_MART_ANALYTICS.COLLECTION_MART.NETS n 
+  ON TRIM(b.loan_no) = TRIM(n.loan_no) AND  b.instrument_date = b.min_inst_date );  
+
+
+CREATE OR REPLACE TEMP TABLE DISHA_MART_ANALYTICS.COLLECTION_MART.NET_BOUNCE_WITH_BLANK_STATUS AS (
+select 
+loan_no,
+old_loan_no ,
+instrument_no,
+deposit_bank_account ,
+instrument_mode ,
+instrument_amount,
+allocated_amt ,
+received_date ,
+CYCLE ,
+ instrument_date ,
+gross_status ,
+reason_for_bouncing ,
+STATUS_MAX ,
+STATUS_13 ,
+STATUS_18 ,
+STATUS_24 ,
+CASE WHEN gross_status = '' then '' ELSE net_status END AS net_status,
+MONTH ,
+GROSS_BOUNCE ,
+NET_BOUNCE ,
+active_flag_new
+FROM DISHA_MART_ANALYTICS.COLLECTION_MART.BOUNCE_WITHOUT_DUPLICATES );
+
+select * from DISHA_MART_ANALYTICS.COLLECTION_MART.NET_BOUNCE_WITH_BLANK_STATUS
+
+
+select * from DISHA_MART_ANALYTICS.COLLECTION_MART.BOUNCE_WITHOUT_DUPLICATES
+
+
