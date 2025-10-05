@@ -1,0 +1,37 @@
+from datetime import datetime, timedelta
+from snowflake.snowpark import Session
+
+def main(session: Session):
+    start_date = datetime.strptime("2025-06-01", "%Y-%m-%d")
+    end_date = datetime.strptime("2025-06-30", "%Y-%m-%d")
+    curr_date = start_date
+
+    results = []
+
+    while curr_date <= end_date:
+        date_str = curr_date.strftime('%Y-%m-%d')
+
+        # Step 1: Check if date exists in reference table
+        check_query = f"""
+            SELECT distinct COUNT(*) AS count
+            FROM DISHA_L1_HARMONIZED.FLEX_LMS.RCPTDUMP_EXTRACT
+            WHERE TO_DATE(MAKER_DAT) = DATE('{date_str}')
+        """
+        count_result = session.sql(check_query).collect()[0]["COUNT"]
+
+        if count_result > 0:
+            print(f"Calling procedure for: {date_str}")
+            try:
+                result = session.sql(f"""
+                    CALL DISHA_MART_ANALYTICS.COLLECTION_MART.LOAD_COLLECTION_BOUNCE_TEST1('{date_str}')
+                """).collect()
+                results.append({"date": date_str, "message": result[0][0]})
+            except Exception as e:
+                print(f"Error calling procedure for {date_str}: {str(e)}")
+                results.append({"date": date_str, "message": f"Error: {str(e)}"})
+        else:
+            print(f"Skipping {date_str} (no data)")
+
+        curr_date += timedelta(days=1)
+
+    return session.create_dataframe(results)
