@@ -1,0 +1,57 @@
+from datetime import datetime, timedelta
+from snowflake.snowpark import Session
+
+def main(session: Session):
+    # Example: two-month window
+    start_date = datetime.strptime("2025-09-01", "%Y-%m-%d")
+    end_date = datetime.strptime("2025-09-30", "%Y-%m-%d")
+
+    curr_date = start_date
+    results = []
+
+    while curr_date <= end_date:
+        date_str = curr_date.strftime('%Y-%m-%d')
+
+        # Step 1: Check if data exists for the date
+        check_query = f"""
+            SELECT COUNT(1) AS count
+            FROM DISHA_L1_HARMONIZED.FLEX_LMS.RCPTDUMP_EXTRACT
+            WHERE TO_DATE(MAKER_DAT) = DATE('{date_str}')
+        """
+        count_result = session.sql(check_query).collect()[0]["COUNT"]
+
+        if count_result > 0:
+            print(f"Running daily procedure for: {date_str}")
+            try:
+                result = session.sql(f"""
+                    CALL DISHA_MART_ANALYTICS.COLLECTION_MART.LOAD_COLLECTION_BOUNCE_WITH_DUPLICATES('{date_str}')
+                """).collect()
+                results.append({"date": date_str, "message": result[0][0]})
+            except Exception as e:
+                print(f"Error calling daily procedure for {date_str}: {str(e)}")
+                results.append({"date": date_str, "message": f"Error: {str(e)}"})
+        else:
+            print(f"Skipping {date_str} (no data found in RCPTDUMP_EXTRACT)")
+            results.append({"date": date_str, "message": "Skipped - no data"})
+
+        # Step 2: Check if it's the last day of the month
+        next_day = curr_date + timedelta(days=1)
+        if next_day.day == 1 or next_day > end_date:
+            # Derive RUN_MONTH as first day of current month
+            run_month = curr_date.strftime("%Y-%m-01")
+            print(f"\nRunning month-end final procedure for RUN_MONTH: {run_month}")
+            try:
+                final_result = session.sql(f"""
+                    CALL DISHA_MART_ANALYTICS.COLLECTION_MART.LOAD_COLLECTION_BOUNCE_FINAL('{run_month}')
+                """).collect()
+                results.append({"date": run_month, "message": f"Final procedure: {final_result[0][0]}"})
+                print(f"Month-end final procedure completed for {run_month}.")
+            except Exception as e:
+                print(f"Error calling month-end procedure for {run_month}: {str(e)}")
+                results.append({"date": run_month, "message": f"Error: {str(e)}"})
+
+        # Move to next day
+        curr_date += timedelta(days=1)
+
+    # Return combined results
+    return session.create_dataframe(results)
