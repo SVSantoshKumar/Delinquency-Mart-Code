@@ -1,0 +1,199 @@
+CREATE OR REPLACE PROCEDURE DISHA_L2_CURATED.BASE_HARDCODE.RUN_EXCEL_QUERIES_DYNAMIC("START_DATE" DATE DEFAULT DATE_ADDMONTHSTODATE(-1, CURRENT_DATE()))
+RETURNS VARCHAR
+LANGUAGE JAVASCRIPT
+EXECUTE AS CALLER
+AS '
+function extractDateFromQuery(query) {
+    if (!query || typeof query !== ''string'') return new Date();
+    let match = query.match(/''(\\d{4}-\\d{2}-\\d{2})''/);
+    return match ? new Date(match[1]) : new Date();
+}
+
+function getFormattedDateArray(frequency, refDate) {
+    let year = refDate.getFullYear();
+    let month = refDate.getMonth() + 1;
+    let fy_start_year = month >= 4 ? year : year - 1;
+    let sql = "";
+
+    let today = new Date();
+    let isRandomDate = refDate.toDateString() !== today.toDateString();
+    let cutoff = new Date(2025, 5, 30); // June 30, 2025
+
+    if (frequency === ''monthly'') {
+        let targetDate = new Date(refDate);
+        targetDate.setMonth(targetDate.getMonth() - 1);
+        let y = targetDate.getFullYear();
+        let m = targetDate.getMonth() + 1;
+        sql = `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`;
+
+    } else if (frequency === ''quarterly'') {
+        if (!isRandomDate) {
+            if (month >= 10) {
+                sql = [7, 8, 9].map(m =>
+                    `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+                ).join(" UNION ALL ");
+            } else if (month >= 7) {
+                sql = [4, 5, 6].map(m =>
+                    `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+                ).join(" UNION ALL ");
+            } else if (month >= 4) {
+                sql = [1, 2, 3].map(m =>
+                    `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year + 1}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+                ).join(" UNION ALL ");
+            } else {
+                sql = [10, 11, 12].map(m =>
+                    `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+                ).join(" UNION ALL ");
+            }
+        } else {
+            let qMonths = refDate < cutoff ? [1, 2, 3] : [4, 5, 6];
+            let y = refDate.getFullYear();
+            sql = qMonths.map(m =>
+                `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+            ).join(" UNION ALL ");
+        }
+
+    } else if (frequency === ''half_yearly'') {
+        if (!isRandomDate) {
+            let months = [4, 5, 6, 7, 8, 9];
+            sql = months.map(m =>
+                `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`
+            ).join(" UNION ALL ");
+        } else if (refDate <= cutoff) {
+            let months = [10, 11, 12, 1, 2, 3];
+            sql = months.map(m => {
+                let y = m >= 4 ? fy_start_year : fy_start_year + 1;
+                return `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`;
+            }).join(" UNION ALL ");
+        } else {
+            return [];
+        }
+
+    } else if (frequency === ''annually'') {
+        if (!isRandomDate) {
+            let months = [4,5,6,7,8,9,10,11,12,1,2,3];
+            sql = months.map(m => {
+                let y = m >= 4 ? fy_start_year : fy_start_year + 1;
+                return `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`;
+            }).join(" UNION ALL ");
+        } else if (refDate <= cutoff) {
+            let months = [4,5,6,7,8,9,10,11,12,1,2,3];
+            sql = months.map(m => {
+                let y = m >= 4 ? fy_start_year : fy_start_year + 1;
+                return `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01'')), ''YYYY-MM-DD'')`;
+            }).join(" UNION ALL ");
+        } else {
+            return [];
+        }
+
+    } else {
+        let y = refDate.getFullYear();
+        let m = refDate.getMonth() + 1;
+        sql = `SELECT TO_VARCHAR(TO_DATE(''${y}-${String(m).padStart(2, ''0'')}-01''), ''YYYY-MM-DD'')`;
+    }
+
+    let rs = snowflake.createStatement({sqlText: sql}).execute();
+    let dates = [];
+    while (rs.next()) {
+        dates.push(rs.getColumnValue(1));
+    }
+    return dates;
+}
+
+// Clear logs
+snowflake.createStatement({ sqlText: `DELETE FROM BASE_HARDCODE.QUERY_EXECUTION_LOG` }).execute();
+snowflake.createStatement({ sqlText: `DELETE FROM BASE_HARDCODE.ERROR_LOG_TABLE` }).execute();
+
+// Fetch config
+let cur = snowflake.createStatement({
+    sqlText: `SELECT "Serial No" AS SERIAL_NO, "SQL Query" AS SQL_QUERY, "Frequency" AS FREQUENCY,
+                     "Tab" AS TAB_NAME, "Row Code" AS ROW_CODE, "Colum Code" AS COLUMN_CODE
+              FROM BASE_HARDCODE.TEST_DYNAMIC_REPORT_DATE_V2`
+}).execute();
+
+while (cur.next()) {
+    let serial_no = cur.getColumnValue("SERIAL_NO");
+    let query_template = cur.getColumnValue("SQL_QUERY");
+    let raw_frequency = cur.getColumnValue("FREQUENCY");
+    let tab = cur.getColumnValue("TAB_NAME");
+    let row_code = cur.getColumnValue("ROW_CODE");
+    let colum_code = cur.getColumnValue("COLUMN_CODE");
+    let frequency = raw_frequency ? raw_frequency.toLowerCase().trim() : ''today'';
+
+    let refDate = extractDateFromQuery(query_template);
+    let dateArray = getFormattedDateArray(frequency, refDate);
+
+    if (!query_template || !query_template.includes(''{{report_dates}}'')) {
+        snowflake.createStatement({
+            sqlText: `INSERT INTO BASE_HARDCODE.ERROR_LOG_TABLE (
+                        ERROR_MESSAGE, FAILED_QUERY, ERROR_TIME, "Tab", "Row Code", "Colum Code"
+                      )
+                      VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+            binds: [''SQL Query is null or missing {{report_dates}}'', query_template || ''N/A'', tab, row_code, colum_code]
+        }).execute();
+        continue;
+    }
+
+    if (!Array.isArray(dateArray) || dateArray.length === 0) {
+        let reason = `Skipped execution: No dates generated for frequency ''${frequency}''`;
+        snowflake.createStatement({
+            sqlText: `INSERT INTO BASE_HARDCODE.ERROR_LOG_TABLE (
+                        ERROR_MESSAGE, FAILED_QUERY, ERROR_TIME, "Tab", "Row Code", "Colum Code"
+                      )
+                      VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+            binds: [reason, query_template, tab, row_code, colum_code]
+        }).execute();
+        continue;
+    }
+
+    let quotedDates = dateArray.map(d => `''${d}''`).join('', '');
+    let final_query = query_template.replace(''{{report_dates}}'', quotedDates);
+
+    try {
+        let stmt = snowflake.createStatement({ sqlText: final_query });
+        let result = stmt.execute();
+        let run_id = `${serial_no}_${new Date().getTime()}`;
+
+        if (!result.next()) {
+            let insert_sql = `
+                INSERT INTO BASE_HARDCODE.QUERY_EXECUTION_LOG (
+                    SERIAL_NO, EXECUTED_ON, EXECUTED_QUERY, QUERY_OUTPUT, RUN_ID,
+                    "Tab", "Row Code", "Colum Code"
+                )
+                SELECT ?, CURRENT_TIMESTAMP, ?, PARSE_JSON(''0''), ?, ?, ?, ?
+            `;
+            snowflake.createStatement({
+                sqlText: insert_sql,
+                binds: [serial_no, final_query, run_id, tab, row_code, colum_code]
+            }).execute();
+        } else {
+            do {
+                let colVal = result.getColumnValue(1);
+                let json_result = JSON.stringify(colVal);
+                let insert_sql = `
+                    INSERT INTO BASE_HARDCODE.QUERY_EXECUTION_LOG (
+                        SERIAL_NO, EXECUTED_ON, EXECUTED_QUERY, QUERY_OUTPUT, RUN_ID,
+                        "Tab", "Row Code", "Colum Code"
+                    )
+                    SELECT ?, CURRENT_TIMESTAMP, ?, PARSE_JSON(''${json_result}''), ?, ?, ?, ?
+                `;
+                snowflake.createStatement({
+                    sqlText: insert_sql,
+                    binds: [serial_no, final_query, run_id, tab, row_code, colum_code]
+                }).execute();
+            } while (result.next());
+        }
+
+    } catch (err) {
+        snowflake.createStatement({
+            sqlText: `INSERT INTO BASE_HARDCODE.ERROR_LOG_TABLE (
+                        ERROR_MESSAGE, FAILED_QUERY, ERROR_TIME, "Tab", "Row Code", "Colum Code"
+                      )
+                      VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+            binds: [err.message, query_template, tab, row_code, colum_code]
+        }).execute();
+    }
+}
+
+return ''All Excel queries executed and logged successfully'';
+';
