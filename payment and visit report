@@ -1,0 +1,663 @@
+-------------------------------Collection Visit Report--------------------------------------------
+
+libname db odbc schema="aavas_collection_live" dsn=dwh;
+
+%let today_date = %sysfunc(today(), date9.);
+%PUT &today_date;
+
+PROC SQL;
+	CREATE TABLE LEVEL1 AS 
+    SELECT CFUT.LOAN_ID,CFUT.MAKER_ID,SUM.USER_NAME,CFUT.AUTHOR_DATE,CFUT.LATITUDE,CFUT.LONGITUDE,
+		   CFUT.ACTION_CODE,CFUT.REMARKS 
+	FROM DB.COLL_FOLLOW_UP_TRAILS CFUT
+	LEFT JOIN DB.SEC_USER_M SUM ON CFUT.MAKER_ID = SUM.USER_ID 
+	WHERE DATEPART(CFUT.AUTHOR_DATE) = "&today_date."d;
+QUIT; 
+
+OPTIONS VALIDVARNAME=v7;
+PROC IMPORT DATAFILE=	"\\192.168.10.230\Collection\Tier_Mapping\Tier Mapping1.xlsx"
+			OUT		=	Tier
+			DBMS	=   xlsx
+			REPLACE;
+RUN;
+
+PROC SQL;
+	CREATE TABLE LEVEL2 AS 
+	SELECT L1.*,T.*,CATX(" - ",USER_NAME,MAKER_ID) AS EXECUTIVE_NAME,
+           CASE WHEN COLLX_BKT = "a: 0 - 0"   THEN 1 WHEN COLLX_BKT = "b: 1 - 30"     THEN 2
+				WHEN COLLX_BKT = "c: 31 - 60" THEN 3 WHEN COLLX_BKT = "d: 61 - 90" 	  THEN 4
+				WHEN COLLX_BKT = "NPA" 	      THEN 5 WHEN COLLX_BKT = "Link Loan NPA" THEN 6
+				WHEN COLLX_BKT = "AFS"	      THEN 7 ELSE 8 
+   		   END AS COLLX_BKT_NEW
+	FROM LEVEL1 L1 LEFT JOIN TIER T ON L1.LOAN_ID = T.LOAN_NO 
+    WHERE T.TEAM IN ('Collection',"Collection-2");
+QUIT;
+
+PROC SORT DATA=LEVEL2 OUT=LEVEL3 DUPOUT=LEVEL4 NODUPKEY;BY LOAN_ID; RUN;
+
+PROC SORT DATA=LEVEL3; BY COLLX_BKT_NEW;RUN;
+
+PROC SQL;
+	CREATE TABLE LEVEL5 AS
+	SELECT compress(put(loan_id,20.)) as loan_no,maker_id AS employee_id,
+		   user_name as Employee_name,EXECUTIVE_NAME,author_date,latitude,longitude,action_code, 
+		   remarks,OP_DPD__Scale,Collx_Bkt, STATE, NH, Ticket, Team, ACM, 
+		   ZH, Bkt as Bucket_Head, TL, Paid as Paid_status
+	FROM LEVEL3;
+QUIT;
+
+PROC SQL;
+CREATE TABLE BUCKET_WISE AS SELECT BKT,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY BKT ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+CREATE TABLE NH_WISE AS SELECT NH,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY NH ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+CREATE TABLE ZH_WISE AS SELECT ZH,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY ZH ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+CREATE TABLE ACM_WISE AS SELECT ACM,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY ACM ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+CREATE TABLE TL_WISE AS SELECT TL,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY TL ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+CREATE TABLE EXECUTIVE_WISE AS SELECT EXECUTIVE_NAME,COUNT(*) AS COUNT FROM LEVEL3 GROUP BY EXECUTIVE_NAME ORDER BY COUNT DESC;
+QUIT;
+
+PROC SQL;
+	CREATE TABLE STATE_WISE AS 
+	SELECT A.STATE,A.COUNT_TABLE1,B.COUNT_TABLE2 FROM 
+	(SELECT STATE,COUNT(*) AS COUNT_TABLE1 FROM TIER WHERE PAID="Unpaid" 
+	AND TEAM IN ('Collection',"Collection-2") GROUP BY STATE) A
+	FULL JOIN 
+	(SELECT STATE,COUNT(*) AS COUNT_TABLE2 FROM LEVEL3 WHERE PAID="Unpaid" GROUP BY STATE) B 
+	ON A.STATE = B.STATE
+	ORDER BY A.COUNT_TABLE1 DESC;
+QUIT;
+
+PROC EXPORT DATA    = LEVEL5
+  			OUTFILE = "\\192.168.10.202\Analytical-Data\Collection Payment Report\Collection_Visit_Report_&sysdate..xlsx" 
+			DBMS    = XLSX 
+			REPLACE;
+RUN;
+
+%emailpww;
+filename temp email 
+from="Analytics Team<biumis@aavas.in>"
+to=("collectionteam@aavas.in") 
+cc=("rahul.jain@aavas.in","bheem.singh@aavas.in","collectionmis@aavas.in","biumis@aavas.in")
+subject="Collection Visit Report @-&SYSDATE.-&SYSTIME."
+attach=("\\192.168.10.202\Analytical-Data\Collection Payment Report\Collection_Visit_Report_&sysdate..xlsx"
+content_type="application/xlsx")
+content_type="text/html";
+
+ODS msoffice2k FILE=temp STYLE=styles.analysis rs=none;
+
+TITLE1 HEIGHT=4 COLOR=DEEPPINK "Collection Visit Report - &sysday., %sysfunc(date(),worddate.) - &SYSTIME.";
+
+TITLE2 HEIGHT=3 COLOR=BLUE "Visit Report by Collection X Bucket Wise";
+PROC REPORT DATA=WORK.LEVEL3 LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN Collx_Bkt N; 
+DEFINE Collx_Bkt / GROUP ORDER=DATA FORMAT= $13. WIDTH=13    SPACING=2   LEFT "Collx Bkt" ;
+DEFINE N / WIDTH=20 SPACING=3 CENTER "Visits Count" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+Collx_Bkt="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUE "Visit Report by State Wise";
+PROC REPORT DATA=WORK.STATE_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN STATE COUNT_TABLE1 COUNT_TABLE2; 
+DEFINE STATE / DISPLAY FORMAT= $16. WIDTH=16    SPACING=2   LEFT "STATE" ;
+DEFINE COUNT_TABLE1 / SUM FORMAT=BEST9. WIDTH=9     SPACING=2   RIGHT "Unpaid" ;
+DEFINE COUNT_TABLE2 / SUM FORMAT=BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+STATE="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUE "Visit Report by Bucket Head Wise";
+PROC REPORT DATA=WORK.BUCKET_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN BKT COUNT;
+DEFINE BKT / DISPLAY FORMAT= $21. WIDTH=21    SPACING=2   LEFT "Bucket Head" ;
+DEFINE COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+BKT="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUE "Visit Report by National Head Wise";
+PROC REPORT DATA=WORK.NH_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN  NH COUNT;
+DEFINE  NH / DISPLAY FORMAT= $21. WIDTH=21    SPACING=2   LEFT "National Head Name" ;
+DEFINE  COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+NH="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUE "Visit Report by Zonal Head Wise";
+PROC REPORT DATA=WORK.ZH_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN  ZH COUNT;
+DEFINE  ZH / DISPLAY FORMAT= $21. WIDTH=21    SPACING=2   LEFT "Zonal Head Name" ;
+DEFINE  COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+ZH="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUE "Visit Report by ACM Wise";
+PROC REPORT DATA=WORK.ACM_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN ACM COUNT;
+DEFINE ACM / DISPLAY FORMAT= $21. WIDTH=21    SPACING=2   LEFT "ACM Name" ;
+DEFINE COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+ACM="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=RED "Visit Report by TL Wise";
+PROC REPORT DATA=WORK.TL_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN TL COUNT;
+DEFINE TL / DISPLAY FORMAT= $21. WIDTH=21    SPACING=2   LEFT "TL Name" ;
+DEFINE COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+TL="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+TITLE1 HEIGHT=3 COLOR=BLUEVIOLET "Visit Report by Executive Wise";
+PROC REPORT DATA=WORK.EXECUTIVE_WISE LS=132 PS=60  SPLIT="/" CENTER ;
+COLUMN EXECUTIVE_NAME COUNT;
+DEFINE EXECUTIVE_NAME / DISPLAY FORMAT= $50. WIDTH=21    SPACING=2   LEFT "EXECUTIVE Name" ;
+DEFINE COUNT / SUM FORMAT= BEST9. WIDTH=9     SPACING=2   RIGHT "Visits" ;
+RBREAK AFTER/SUMMARIZE;
+COMPUTE AFTER;
+EXECUTIVE_NAME="Grand Total" ;
+IF upcase(_BREAK_)="_RBREAK_" THEN DO;
+CALL DEFINE (_ROW_,'style','style=[background=#EDF2F9 foreground=#112277 fontweight=bold');
+END;
+ENDCOMP;
+RUN;
+TITLE '';
+
+ODS msoffice2k CLOSE;
+
+
+----------------------------------------   Collection Payment Report ---------------------------------------------------------------------
+
+filename rsprread 'D:\password\rsprread.psw';
+options symbolgen;
+
+data _null_;
+infile rsprread truncover;
+input line :$50.;
+call symputx('password',line);
+run;
+
+/*----- change schema name if required ----*/
+
+libname prod redshift 
+server='redshift-cluster-1.ciyvrppnkilb.ap-south-1.redshift.amazonaws.com' 
+database='aavasdata' 
+user='readonlydbuser' 
+password = "&password" port='5439' schema='fcrusr';
+
+data _null_;
+call symput('fortoday', PUT(TODAY(),date7.));
+run;
+%put &fortoday.;
+
+PROC SQL;
+	CREATE TABLE RECEIPT AS 
+	SELECT LTDE.COD_ACCT_NO,	   
+		   CASE WHEN LTDE.REPAY_MODE IN (0,21) THEN "CASH" 
+				WHEN LTDE.REPAY_MODE IN (1) THEN "CHEQUE" 
+				WHEN LTDE.REPAY_MODE IN (6,7,8,9,12,13) THEN "ONLINE" 
+	            ELSE "NO"
+		   END AS INSTRUMENT_MODE,
+           (LTDE.TOT_INSTLMNT_AMT + LTDE.AMT_SETTLEMENT) AS Allocated_Amount,
+		   'Realized' as rcpt_stat,cod_rcpt_no as rcpt_no
+	FROM PROD.ln_txn_dtls_ext LTDE 
+	WHERE datepart(LTDE.dat_rcpt) = "&fortoday."D 
+	AND LTDE.TOT_INSTLMNT_AMT > 0 
+	AND LTDE.SETTLEMENT_MODE IN ('A','O','') 
+/*	AND LTDE.FLG_REV_ALLOWED= "Y"*/
+/*	AND LTDE.REV_FLAG = "N" */
+	HAVING INSTRUMENT_MODE NOT IN ("NO");
+QUIT;
+
+PROC SQL;
+	CREATE TABLE Receipt1 AS 
+	SELECT cod_acct_no,sum(Allocated_Amount) AS ALLOCATED_AMOUNT 
+	FROM RECEIPT 
+	GROUP BY 1;
+QUIT;
+
+PROC SORT DATA=Receipt(KEEP=cod_acct_no Instrument_Mode rcpt_stat) OUT=Receipt2 NODUPKEY;
+BY cod_acct_no;
+RUN;
+
+PROC SQL;
+	CREATE TABLE Receipt3 AS 
+	SELECT a.*,b.Instrument_Mode,B.rcpt_stat 
+    FROM Receipt1 a 
+	LEFT JOIN Receipt2 b ON a.COD_ACCT_NO = b.COD_ACCT_NO;
+QUIT;
+
+/* For Unrealized Cases */
+
+PROC SQL;
+	CREATE TABLE LXCR AS 
+	SELECT COD_ACCT_NO,        
+		   CASE WHEN cod_coll_mode = '0' THEN 'CASH' 
+				WHEN cod_coll_mode = '1' THEN 'ICHQ' ELSE '' 
+		        END AS INSTRUMENT_MODE,
+		   amt_install_pre_emi_int as Allocated_Amount,
+           CASE WHEN flg_repay_status = 'U' THEN 'Deposited' ELSE ''
+           END AS rcpt_stat,coll_receipt_no as rcpt_no
+	FROM PROD.LN_X_COLLECTION_REGISTER 
+	WHERE datepart(dat_value) = "&fortoday."D
+	HAVING rcpt_stat = "Deposited";
+QUIT; 
+
+PROC SQL;
+	CREATE TABLE LXCR1 AS 
+	SELECT cod_acct_no,sum(Allocated_Amount) AS ALLOCATED_AMOUNT 
+	FROM LXCR GROUP BY 1;
+QUIT;
+
+PROC SORT DATA=LXCR(KEEP=cod_acct_no Instrument_Mode rcpt_stat) OUT=LXCR2 NODUPKEY;
+BY cod_acct_no;
+RUN;
+
+PROC SQL;
+	CREATE TABLE LXCR3 AS 
+	SELECT a.*,b.Instrument_Mode,B.rcpt_stat 
+    FROM LXCR1 a 
+    LEFT JOIN LXCR2 b ON a.COD_ACCT_NO=b.COD_ACCT_NO;
+QUIT;
+
+PROC SQL;
+	CREATE TABLE FINAL AS 
+	SELECT * FROM Receipt3 UNION ALL SELECT * FROM LXCR3;
+QUIT;
+
+OPTIONS VALIDVARNAME=v7;
+
+PROC IMPORT DATAFILE=	"\\192.168.10.230\Collection\Tier_Mapping\Tier Mapping1.xlsx"
+			OUT		=	Tier
+			DBMS	=   xlsx
+			REPLACE;
+RUN;
+
+LIBNAME DAILY ODBC SCHEMA="datascience" DSN=dwh;
+
+PROC SQL;
+	CREATE TABLE RECEIPT_DELINQUENCY AS
+	SELECT T1.cod_acct_no,T1.INSTRUMENT_MODE,T1.Allocated_Amount,T1.rcpt_stat as Receipt_Status,
+	       SUM(MFDB.Total_Due,MFDB.pre_emi) AS Total_Due,ROUND(COALESCE(MFDB.pos_cr, 0), 0.01) AS CR
+	FROM FINAL T1
+	LEFT JOIN DAILY.M_FINALDELIQUENCY_BASE MFDB ON T1.COD_ACCT_NO = compress(PUT(MFDB.LOAN_ID,20.))
+	WHERE MFDB.tmcurrentstatus IN ("5.Roll Forward","6.Cheque In Transit");
+QUIT;
+
+PROC SQL;
+	CREATE TABLE map_tier AS
+	SELECT a.*,b.* FROM RECEIPT_DELINQUENCY a
+	LEFT JOIN TIER B ON a.cod_acct_no = COMPRESS(PUT(B.loan_no,20.)) 
+    HAVING OP_DPD__Scale IS NOT NULL;
+QUIT;
+
+data map_tier1;
+	set map_tier;
+	if TOTAL_DUE <= ALLOCATED_AMOUNT THEN N_FLAG=1;
+RUN; 
+
+PROC SQL;
+	CREATE TABLE MAP_TIER_1 AS 
+	SELECT *,CASE WHEN COLLX_BKT = "a: 0 - 0"   	THEN 1
+				  WHEN COLLX_BKT = "b: 1 - 30"      THEN 2
+				  WHEN COLLX_BKT = "c: 31 - 60" 	THEN 3
+				  WHEN COLLX_BKT = "d: 61 - 90" 	THEN 4
+				  WHEN COLLX_BKT = "NPA" 	        THEN 5
+				  WHEN COLLX_BKT = "Link Loan NPA"  THEN 6
+				  WHEN COLLX_BKT = "NPA AFS"        THEN 7
+			      WHEN COLLX_BKT = "AFS"      		THEN 8
+				  ELSE 9 
+                  END AS COLLX_BKT_NEW
+	FROM MAP_TIER1;
+QUIT;
+
+PROC SORT DATA=MAP_TIER_1; BY COLLX_BKT_NEW;RUN; 
+
+PROC SQL;
+	CREATE TABLE map_tier2 AS 
+	SELECT cod_acct_no AS New_loan_no,INSTRUMENT_MODE AS Instrument_Mode,
+           Allocated_Amount AS Allocated_Amount,Total_Due, OP_DPD__Scale AS OP_DPD_Scale,Collx_Bkt,
+		   cr AS Cr,Ticket, NH, Bkt AS Bucket_Head, Team, ACM, ZH_ AS ZH, _STATE AS State,
+           Receipt_Status	
+    FROM map_tier1
+	ORDER BY cod_acct_no,OP_DPD__Scale,Collx_Bkt;
+QUIT;
+
+/******************************************************************************************/
+PROC SQL;
+	CREATE TABLE Receipt4 AS
+	SELECT cod_acct_no,sum(Allocated_Amount) AS INSTRUMENT_AMOUNT FROM FINAL GROUP BY 1;
+QUIT;
+
+PROC SORT DATA=Final(KEEP=cod_acct_no Instrument_Mode rcpt_stat) OUT=Receipt5 NODUPKEY;
+BY cod_acct_no;
+RUN;
+
+PROC SQL;
+	CREATE TABLE Receipt6 AS 
+	SELECT a.*,b.Instrument_Mode,b.rcpt_stat 
+    FROM Receipt4 a 
+    LEFT JOIN Receipt5 b ON a.COD_ACCT_NO=b.COD_ACCT_NO;
+QUIT;
+
+/*Additional Payment Status*/
+
+PROC SQL;
+	CREATE TABLE map_add AS
+	SELECT R6.*,
+	   	   MFDB.tmcurrentstatus,SUM(MFDB.Total_Due,MFDB.pre_emi) AS Total_Due,
+           round(coalesce(MFDB.pos_cr,0.00),0.01) AS cr 
+	FROM Receipt6 R6 
+	LEFT JOIN DAILY.M_FINALDELIQUENCY_BASE MFDB ON R6.COD_ACCT_NO = COMPRESS(PUT(MFDB.LOAN_ID,20.))
+	WHERE MFDB.tmcurrentstatus in ("3.Roll Back","4.Stable","");
+QUIT;
+
+data map_add1;
+	set map_add;
+	if TOTAL_DUE <= INSTRUMENT_AMOUNT THEN N_FLAG=1;
+RUN; 
+
+proc sql;
+	create table map_tier_add as
+	select a.*,b.* from map_add1 a
+	left join tier B on a.COD_ACCT_NO = COMPRESS(PUT(B.loan_no,20.))
+	having OP_DPD__Scale ne '';
+QUIT;
+
+PROC SQL;
+	CREATE TABLE map_tier_add1 AS 
+	SELECT cod_acct_no AS New_loan_no,INSTRUMENT_MODE as Instrument_Mode,
+		   INSTRUMENT_AMOUNT as Instrument_Amount,Total_Due,OP_DPD__Scale as OP_DPD_Scale,
+           cr as Cr, Ticket, NH, Bkt as Bucket_Head,
+		   Team, ACM, ZH_ as ZH, _STATE AS State,rcpt_stat as Receipt_Status
+	FROM map_tier_add;
+QUIT;
+
+proc export data=map_tier2
+outfile="\\192.168.10.202\Analytical-Data\Collection Payment Report\Collection_Report2_&sysdate..xlsx"
+dbms=xlsx 
+replace;
+sheet="Summary";
+run;
+
+proc export data=map_tier_add1
+outfile="\\192.168.10.202\Analytical-Data\Collection Payment Report\A_Collection_Report2_&sysdate..xlsx" 
+dbms=xlsx
+replace;
+sheet="Summary";
+run;
+
+%emailpww;
+filename temp email 
+from="analytics Team<biumis@aavas.in>"
+to=("nemani.kiran@aavas.in")
+/*to=("rajaram.balasubramaniam@aavas.in","ripudaman.bandral@aavas.in","ashutosh.atre@aavas.in",*/
+/*	"sachinder.bhinder@aavas.in","selvin.uthaman@aavas.in")*/
+/*cc=("anand.gupta1@aavas.in","vishal.deora@aavas.in","bijendra.dhillon@aavas.in",*/
+/*	"mahaveer.gurjar@aavas.in","ranjeet.jat@aavas.in","ramesh.kumar@aavas.in","sandeep.rav@aavas.in","anjali.arya@aavas.in",*/
+/*	"mohd.kalim@aavas.in","jitender.singh@aavas.in","sadik.siddiqui@aavas.in","vivek.sharma2@aavas.in","hari.singh@aavas.in","vishal.kumar@aavas.in",*/
+/*	"manoj.kumar@aavas.in","prem.kumar@aavas.in","komal.jalandra@aavas.in","purva.kurtkoti@aavas.in","adrian.mascarenhas@aavas.in",*/
+/*	"surendra.singh3@aavas.in","mohit.mate@aavas.in","ashok.kumar@aavas.in","eknath.sabe@aavas.in","yogendra.singh@aavas.in",*/
+/*	"rajkumar.shinde@aavas.in","vijay.chouhan@aavas.in","deepak.sood@aavas.in",*/
+/*	"prince@aavas.in","murad.ali@aavas.in","mala.ram@aavas.in","umesh.pandya@aavas.in",*/
+/*	"ajay.yadav@aavas.in","amit.sahu@aavas.in","vikram.singh1@aavas.in","lakhvindra@aavas.in",*/
+/*	"chetan.shekhawat@aavas.in","ravi.datt@aavas.in","dalip.rathore@aavas.in",*/
+/*	"jaydeep.jodha@aavas.in","atmaram@aavas.in","laxman.jat@aavas.in","sagarmal.garg@aavas.in",*/
+/*	"raja.jhade@aavas.in","rajesh.jat@aavas.in","pushpendra.meena1@aavas.in",*/
+/*	"sandeep.kumar6@aavas.in","manav.pratap@aavas.in","rahul.singh2@aavas.in","pawan.banjara@aavas.in",*/
+/*	"prem.kumar1@aavas.in","ramesh.choudhary@aavas.in","vikram.parihar@aavas.in",*/
+/*	"dinesh1@aavas.in","rajesh.kumar@aavas.in","mukesh.kumar7@aavas.in","vikash@aavas.in",*/
+/*	"rajendra.saini@aavas.in","jitender.godara@aavas.in","pushpendra.charan@aavas.in",*/
+/*	"ram.niwash@aavas.in","prakash.choudhary@aavas.in","rakesh@aavas.in","sanjay.kumar5@aavas.in","ugarsen.rinwa@aavas.in","devendra.kumar@aavas.in",*/
+/*    "rajesh.gurjar@aavas.in","lalit1@aavas.in","krpal.singh@aavas.in","karan@aavas.in","pawan.kumar2@aavas.in",*/
+/*	"krishnapal.sisodiya@aavas.in","ramesh.jat1@aavas.in","sanjay.yadav1@aavas.in","Sudhanshu@auhtm.in","arpan.parouha@aavas.in",*/
+/*	"Aarti.gour@aavas.in","collectionmis@aavas.in","ayushi.khandelwal@aavas.in","rahul.jain@aavas.in","vikramaditya.vashishtha@aavas.in",*/
+/*	"sayari.yadav@aavas.in","aditya.harsana@aavas.in","manju@aavas.in","vijay.iyer@aavas.in","arun.kumar2@aavas.in",*/
+/*	"vinayak.sharma@aavas.in","rajendra.choudhary@aavas.in","rajendra.gaur@aavas.in","kishan.shekhawat@aavas.in","biumis@aavas.in")*/
+subject="Collection Payment Report @-&SYSDATE.-&SYSTIME."
+attach=("\\192.168.10.202\Analytical-Data\Collection Payment Report\Collection_Report2_&sysdate..xlsx" content_type="application/xlsx"
+"\\192.168.10.202\Analytical-Data\Collection Payment Report\A_Collection_Report2_&sysdate..xlsx" content_type="application/xlsx")
+type="text/html";
+
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x  file=temp options(panelcols="1" ) style=styles.analysis rs=none;
+
+Title height=4 justify=center color=BlueViolet "Collection Payment Report - &sysday., %sysfunc(date(),worddate.)";
+/*TITLE;*/
+ODS LISTING CLOSE;
+
+ods tagsets.msoffice2k_x options(panelcols="2") rs=none;
+TITLE2 height=3 justify=center color=deeppink "Opening DPD Bucket Wise - Delinquency Payment Status";
+proc tabulate data=map_tier;
+class OP_DPD__Scale INSTRUMENT_MODE;
+var CR;
+table OP_DPD__Scale="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ODPD" misstext="0";
+run;
+/*TITLE;*/
+
+TITLE2 height=3 justify=center color=deeppink "Normalization - Delinquency Payment Status";
+proc tabulate data=map_tier1;
+class OP_DPD__Scale INSTRUMENT_MODE;
+var CR;
+WHERE N_FLAG=1;
+table OP_DPD__Scale="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ODPD" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+
+ods tagsets.msoffice2k_x options(panelcols="2") rs=none;
+TITLE2 height=3 color=deeppink "Collection X Bucket Wise";
+proc tabulate data=MAP_TIER_1;
+class Collx_Bkt INSTRUMENT_MODE /ORDER=DATA;
+var CR;
+table Collx_Bkt="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="Collx Bkt" misstext="0";
+run;
+TITLE;
+
+TITLE2 height=3 color=deeppink "Normalization - Collection X Bucket Wise";
+proc tabulate data=MAP_TIER_1;
+class Collx_Bkt INSTRUMENT_MODE/ORDER=DATA;
+var CR;
+WHERE N_FLAG=1;
+table Collx_Bkt="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="Collx Bkt" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="2") rs=none;
+
+TITLE2 height=3 color=deeppink "Additional Payment Status";
+proc tabulate data=map_tier_add;
+class OP_DPD__Scale INSTRUMENT_MODE;
+var CR;
+table OP_DPD__Scale="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ODPD" misstext="0";
+run;
+TITLE;
+
+TITLE2 height=3 color=deeppink "Normalization - Additional Payment Status";
+proc tabulate data=map_tier_add;
+class OP_DPD__Scale INSTRUMENT_MODE;
+var CR;
+WHERE N_FLAG=1;
+table OP_DPD__Scale="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ODPD" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="2") rs=none;
+
+TITLE2 height=3 color=deeppink "Opening DPD Bucket - Ticket Wise";
+proc tabulate data=map_tier;
+class OP_DPD__Scale ticket;
+var CR;
+table OP_DPD__Scale="" all="Grand Total",  ticket=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ODPD" misstext="0";
+run;
+TITLE2;*/;
+
+TITLE2 height=3 color=deeppink "Collection X Bucket - Ticket Wise";
+proc tabulate data=MAP_TIER_1;
+class Collx_Bkt ticket/ORDER=DATA;
+var CR;
+table Collx_Bkt="" all="Grand Total",  ticket=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="Collx Bkt" misstext="0";
+run;
+TITLE2;*/;
+
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="2") rs=none;
+
+TITLE1 height=3 color=deeppink "Opening DPD Bucket Wise - National Head Performance";
+proc tabulate data=map_tier ;
+class OP_DPD__Scale NH INSTRUMENT_MODE  ;
+var CR;
+table NH ="" * (OP_DPD__Scale ="" all="Total")  all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="NH / ODPD" misstext="0";
+run;
+TITLE;
+
+TITLE2 height=3 color=deeppink "Collection X Bucket Wise - National Head Performance";
+proc tabulate data=MAP_TIER_1;
+class Collx_Bkt NH INSTRUMENT_MODE/ORDER=DATA;
+var CR;
+table NH ="" * (collx_bkt ="" all="Total")  all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="Collx Bkt" misstext="0";
+run;
+TITLE2;*/;
+
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="1") rs=none;
+
+TITLE2 height=3 color=deeppink "State Wise Deliquency Payment Status";
+proc tabulate data=map_tier ;
+class _STATE INSTRUMENT_MODE   ;
+var CR;
+table _STATE="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="STATE" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="1") rs=none;
+
+TITLE2 height=3 color=deeppink "Team Wise Delinquency Payment Status";
+proc tabulate data=map_tier ;
+class team INSTRUMENT_MODE   ;
+var CR;
+table team="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="TEAM" misstext="0";
+run;
+TITLE;
+
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="1") rs=none;
+
+TITLE1 height=3 color=deeppink "Zonal Head Wise Performance";
+proc tabulate data=map_tier ;
+class ZH_ INSTRUMENT_MODE   ;
+var CR;
+table ZH_="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ZH" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="1") rs=none;
+
+TITLE1 height=3 color=deeppink "ACM Wise Performance";
+proc tabulate data=map_tier ;
+class ACM INSTRUMENT_MODE   ;
+var CR;
+table ACM="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="ACM" misstext="0";
+run;
+TITLE;
+ODS LISTING CLOSE;
+ods tagsets.msoffice2k_x options(panelcols="1") rs=none;
+
+TITLE1 height=3 color=deeppink "Receipt Status";
+proc tabulate data=map_tier ;
+class Receipt_Status INSTRUMENT_MODE;
+var CR;
+table Receipt_Status="" all="Grand Total",  INSTRUMENT_MODE=""*(N="Count" CR=""*(sum="Sum"*f=8.2)) 
+			all="Total" *(N="Count" CR=""*(sum="Sum"*f=8.2))
+/box="Receipt Status" misstext="0";
+run;
+TITLE;
+
+ods msoffice2k close;
