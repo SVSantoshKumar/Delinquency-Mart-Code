@@ -1,0 +1,185 @@
+Execution error in store procedure RUN_EXCEL_QUERIES_DYNAMIC1: SQL compilation error: syntax error line 1 at position 115 unexpected ')'. At Statement.execute, line 173 position 92
+
+
+
+CREATE OR REPLACE PROCEDURE DISHA_MART_ANALYTICS.REGULATORY_MART.RUN_EXCEL_QUERIES_DYNAMIC1("META_TABLE_NAME" VARCHAR, "START_DATE" DATE DEFAULT DATE_ADDMONTHSTODATE(-1, CURRENT_DATE()))
+RETURNS VARCHAR
+LANGUAGE JAVASCRIPT
+EXECUTE AS CALLER
+AS '
+function extractDateFromQuery(query) {
+    if (!query || typeof query !== ''string'') return new Date();
+    let match = query.match(/''(\\d{4}-\\d{2}-\\d{2})''/);
+    return match ? new Date(match[1]) : new Date();
+}
+
+// ============================================================================
+// CHANGE 1: Modified getFormattedDateArray to accept inputDate parameter
+// ============================================================================
+function getFormattedDateArray(frequency, refDate, inputDate) {
+    let year = refDate.getFullYear();
+    let month = refDate.getMonth() + 1;
+    let fy_start_year = month >= 4 ? year : year - 1;
+    let sql = "";
+    let today = new Date();
+    let isRandomDate = refDate.toDateString() !== today.toDateString();
+    let cutoff = new Date(2025, 5, 30);
+    
+    // ============================================================================
+    // CHANGE 2: Modified monthly frequency logic to use inputDate if provided
+    // ============================================================================
+    if (frequency === ''monthly'') {
+        let targetDate;
+        
+        // If inputDate is provided (not null), use it directly
+        if (inputDate) {
+            targetDate = new Date(inputDate);
+        } else {
+            // Otherwise, use previous month from refDate
+            targetDate = new Date(refDate);
+            targetDate.setMonth(targetDate.getMonth() - 1);
+        }
+        
+        let y = targetDate.getFullYear();
+        let m = targetDate.getMonth() + 1;
+        sql = `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`;
+    } else if (frequency === ''quarterly'') {
+        if (!isRandomDate) {
+            if (month >= 10) {
+                sql = [7,8,9].map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+            } else if (month >= 7) {
+                sql = [4,5,6].map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+            } else if (month >= 4) {
+                sql = [1,2,3].map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year+1}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+            } else {
+                sql = [10,11,12].map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+            }
+        } else {
+            let qMonths = refDate < cutoff ? [1,2,3] : [4,5,6];
+            let y = refDate.getFullYear();
+            sql = qMonths.map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+        }
+    } else if (frequency === ''half_yearly'') {
+        if (!isRandomDate) {
+            let months = [4,5,6,7,8,9];
+            sql = months.map(m => `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${fy_start_year}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`).join('' UNION ALL '');
+        } else if (refDate <= cutoff) {
+            let months = [10,11,12,1,2,3];
+            sql = months.map(m => { let y = m>=4?fy_start_year:fy_start_year+1; return `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`; }).join('' UNION ALL '');
+        } else { return []; }
+    } else if (frequency === ''annually'') {
+        if (!isRandomDate || refDate <= cutoff) {
+            let months = [4,5,6,7,8,9,10,11,12,1,2,3];
+            sql = months.map(m => { let y = m>=4?fy_start_year:fy_start_year+1; return `SELECT TO_VARCHAR(LAST_DAY(TO_DATE(''${y}-${String(m).padStart(2,''0'')}-01'')), ''YYYY-MM-DD'')`; }).join('' UNION ALL '');
+        } else { return []; }
+    } else {
+        let y = refDate.getFullYear(); let m = refDate.getMonth()+1;
+        sql = `SELECT TO_VARCHAR(TO_DATE(''${y}-${String(m).padStart(2,''0'')}-01''), ''YYYY-MM-DD'')`;
+    }
+    let rs = snowflake.createStatement({sqlText: sql}).execute();
+    let dates = []; while(rs.next()){ dates.push(rs.getColumnValue(1)); } return dates;
+}
+
+let EXECUTION_LOG_TABLE = META_TABLE_NAME + ''_EXECUTION_LOG'';
+let ERROR_LOG_TABLE = META_TABLE_NAME + ''_ERROR_LOG'';
+let EXECUTION_HISTORY_TABLE = META_TABLE_NAME + ''_EXECUTION_HISTORY'';
+
+function ensureTableExists(tableName, createSQL){
+    let checkSQL = `SHOW TABLES LIKE ''${tableName.split(''.'').pop()}'' IN SCHEMA ${tableName.split(''.'').slice(0,-1).join(''.'')}`;
+    let checkStmt = snowflake.createStatement({sqlText:checkSQL});
+    let checkResult = checkStmt.execute();
+    if(!checkResult.next()){ snowflake.createStatement({sqlText:createSQL}).execute(); }
+}
+
+ensureTableExists(EXECUTION_LOG_TABLE, `CREATE TABLE ${EXECUTION_LOG_TABLE}(SERIAL_NO STRING, EXECUTED_ON TIMESTAMP, EXECUTED_QUERY STRING, REPORT_DATE_USED STRING, QUERY_OUTPUT VARIANT, RUN_ID STRING)`);
+ensureTableExists(ERROR_LOG_TABLE, `CREATE TABLE ${ERROR_LOG_TABLE}(ERROR_MESSAGE STRING, FAILED_QUERY STRING, ERROR_TIME TIMESTAMP)`);
+ensureTableExists(EXECUTION_HISTORY_TABLE, `CREATE TABLE ${EXECUTION_HISTORY_TABLE}(SERIAL_NO STRING, EXECUTED_ON TIMESTAMP, EXECUTED_QUERY STRING, REPORT_DATE_USED STRING, QUERY_OUTPUT VARIANT, RUN_ID STRING)`);
+snowflake.createStatement({sqlText: `TRUNCATE TABLE ${EXECUTION_LOG_TABLE}`}).execute();
+
+// Fetch metadata columns before main loop
+let metaColsSQL = `SELECT COLUMN_NAME FROM DISHA_MART_ANALYTICS.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=''${META_TABLE_NAME.split(''.'').pop()}'' AND TABLE_SCHEMA=''${META_TABLE_NAME.split(''.'')[META_TABLE_NAME.split(''.'').length-2]}''`;
+let metaColsStmt = snowflake.createStatement({sqlText:metaColsSQL});
+let metaColsResult = metaColsStmt.execute();
+let metaCols = []; while(metaColsResult.next()){ metaCols.push(metaColsResult.getColumnValue(1)); }
+
+// Ensure metadata columns exist in log tables
+for(let col of metaCols){
+    snowflake.createStatement({sqlText:`ALTER TABLE ${EXECUTION_LOG_TABLE} ADD COLUMN IF NOT EXISTS \\"${col}\\" STRING`}).execute();
+    snowflake.createStatement({sqlText:`ALTER TABLE ${ERROR_LOG_TABLE} ADD COLUMN IF NOT EXISTS \\"${col}\\" STRING`}).execute();
+    snowflake.createStatement({sqlText:`ALTER TABLE ${EXECUTION_HISTORY_TABLE} ADD COLUMN IF NOT EXISTS \\"${col}\\" STRING`}).execute();
+}
+
+// Select rows from metadata table
+let cur = snowflake.createStatement({sqlText:`SELECT * FROM ${META_TABLE_NAME}`}).execute();
+
+while(cur.next()){
+    let serial_no = cur.getColumnValue(''SERIAL_NO'');
+    let query_template = cur.getColumnValue(''SQL_QUERY'');
+    let raw_frequency = cur.getColumnValue(''FREQUENCY'');
+    let frequency = raw_frequency ? raw_frequency.toLowerCase().trim() : ''today'';
+    let refDate = extractDateFromQuery(query_template);
+    // ============================================================================
+    // CHANGE 3: Pass START_DATE parameter to getFormattedDateArray function
+    // ============================================================================
+    let dateArray = getFormattedDateArray(frequency, refDate, START_DATE);
+    
+    if(!query_template || !query_template.includes(''{{report_dates}}'')){
+        let ERROR_MSG=''Missing {{report_dates}}''; let FAILED_Q=query_template||''N/A'';
+let metaValues = []; for(let col of metaCols){ metaValues.push(cur.getColumnValue(col)); }
+let metaColNamesSQL = metaCols.map(c=>`\\"${c}\\"`).join('', '');
+let metaPlaceholders = metaCols.map(()=>''?'').join('', '');
+let errorSQL = `INSERT INTO ${ERROR_LOG_TABLE}(ERROR_MESSAGE,FAILED_QUERY,ERROR_TIME,${metaColNamesSQL}) SELECT ?,?,CURRENT_TIMESTAMP,${metaPlaceholders}`;
+snowflake.createStatement({sqlText:errorSQL,binds:[ERROR_MSG,FAILED_Q].concat(metaValues)}).execute();
+        continue;
+    }
+    if(!Array.isArray(dateArray)||dateArray.length===0){
+        let ERROR_MSG=''No dates generated''; let FAILED_Q=query_template;
+let metaValues = []; for(let col of metaCols){ metaValues.push(cur.getColumnValue(col)); }
+let metaColNamesSQL = metaCols.map(c=>`\\"${c}\\"`).join('', '');
+let metaPlaceholders = metaCols.map(()=>''?'').join('', '');
+let errorSQL = `INSERT INTO ${ERROR_LOG_TABLE}(ERROR_MESSAGE,FAILED_QUERY,ERROR_TIME,${metaColNamesSQL}) SELECT ?,?,CURRENT_TIMESTAMP,${metaPlaceholders}`;
+snowflake.createStatement({sqlText:errorSQL,binds:[ERROR_MSG,FAILED_Q].concat(metaValues)}).execute();
+        continue;
+    }
+    let quotedDates = dateArray.map(d=>`''${d}''`).join('', '');
+    let final_query = query_template.replace(''{{report_dates}}'',quotedDates);
+    let REPORT_DATE_USED_match = final_query.match(/Report_Date\\s+IN\\s+(\\(.*?\\))/i);
+    let REPORT_DATE_USED = REPORT_DATE_USED_match ? REPORT_DATE_USED_match[1] : null;
+    try{
+        let stmt = snowflake.createStatement({sqlText:final_query});
+        let result = stmt.execute();
+        let run_id = `${serial_no}_${new Date().getTime()}`;
+        // Fetch metadata values for this row
+        let metaValues = []; for(let col of metaCols){ metaValues.push(cur.getColumnValue(col)); }
+        let metaColNamesSQL = metaCols.map(c=>`\\"${c}\\"`).join('', '');
+        let metaPlaceholders = metaCols.map(()=>''?'').join('', '');
+        let insertSQL = `INSERT INTO ${EXECUTION_LOG_TABLE}(SERIAL_NO1,EXECUTED_ON,EXECUTED_QUERY,REPORT_DATE_USED,QUERY_OUTPUT,RUN_ID,${metaColNamesSQL}) SELECT ?,CURRENT_TIMESTAMP,?,?,PARSE_JSON(?),?,${metaPlaceholders}`;
+        let historySQL = `INSERT INTO ${EXECUTION_HISTORY_TABLE}(SERIAL_NO1,EXECUTED_ON,EXECUTED_QUERY,REPORT_DATE_USED,QUERY_OUTPUT,RUN_ID,${metaColNamesSQL}) SELECT ?,CURRENT_TIMESTAMP,?,?,PARSE_JSON(?),?,${metaPlaceholders}`;
+        if(!result.next()){
+            let binds = [serial_no,final_query,REPORT_DATE_USED,''0'',run_id].concat(metaValues);
+            snowflake.createStatement({sqlText:insertSQL,binds}).execute();
+            snowflake.createStatement({sqlText:historySQL,binds}).execute();
+        } else {
+            do{
+                let columnCount = result.getColumnCount();
+                let rowValues = []; for(let i=1;i<=columnCount;i++){ rowValues.push(result.getColumnValue(i)); }
+                let colNamesSQL = Array.from({length:columnCount},(_,i)=>`\\"${result.getColumnName(i+1)}\\"`).join('', '');
+                let colPlaceholders = Array.from({length:columnCount},()=>''?'').join('', '');
+                let insertSQLDynamic = `INSERT INTO ${EXECUTION_LOG_TABLE}(SERIAL_NO1,EXECUTED_ON,EXECUTED_QUERY,REPORT_DATE_USED,RUN_ID,${metaColNamesSQL},${colNamesSQL}) SELECT ?,CURRENT_TIMESTAMP,?,?,?,${metaPlaceholders},${colPlaceholders}`;
+                let historySQLDynamic = `INSERT INTO ${EXECUTION_HISTORY_TABLE}(SERIAL_NO1,EXECUTED_ON,EXECUTED_QUERY,REPORT_DATE_USED,RUN_ID,${metaColNamesSQL},${colNamesSQL}) SELECT ?,CURRENT_TIMESTAMP,?,?,?,${metaPlaceholders},${colPlaceholders}`;
+                let binds = [serial_no,final_query,REPORT_DATE_USED,run_id].concat(metaValues).concat(rowValues);
+                snowflake.createStatement({sqlText:insertSQLDynamic,binds}).execute();
+                snowflake.createStatement({sqlText:historySQLDynamic,binds}).execute();
+            } while(result.next());
+        }
+    } catch(err){
+        let ERROR_MSG=err.message; let FAILED_Q=query_template;
+let metaValues = []; for(let col of metaCols){ metaValues.push(cur.getColumnValue(col)); }
+let metaColNamesSQL = metaCols.map(c=>`\\"${c}\\"`).join('', '');
+let metaPlaceholders = metaCols.map(()=>''?'').join('', '');
+let errorSQL = `INSERT INTO ${ERROR_LOG_TABLE}(ERROR_MESSAGE,FAILED_QUERY,ERROR_TIME,${metaColNamesSQL}) SELECT ?,?,CURRENT_TIMESTAMP,${metaPlaceholders}`;
+snowflake.createStatement({sqlText:errorSQL,binds:[ERROR_MSG,FAILED_Q].concat(metaValues)}).execute();
+    }
+}
+return ''All Excel queries executed and logged successfully'';
+';
